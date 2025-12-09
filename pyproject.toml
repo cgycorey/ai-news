@@ -1,0 +1,41 @@
+[project]
+name = "ai-news"
+version = "0.1.0"
+description = "Simple AI news collector and feeder"
+authors = [{name = "User", email = "user@example.com"}]
+dependencies = [
+    "feedparser>=6.0.10",
+    "httpx>=0.25.0",
+    "click>=8.1.0",
+    "pydantic>=2.0.0",
+    "rich>=13.0.0",
+    "pyyaml>=6.0",
+    "beautifulsoup4>=4.12.0",
+    "python-dateutil>=2.8.0",
+]
+requires-python = ">=3.10"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "black>=23.0.0",
+    "flake8>=6.0.0",
+    "mypy>=1.0.0",
+]
+
+[project.scripts]
+ai-news = "ai_news.cli:main"
+ai-daily = "ai_news.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.black]
+line-length = 88
+target-version = ['py310']
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true

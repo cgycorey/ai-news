@@ -1,0 +1,8 @@
+#!/bin/bash
+# Simple wrapper for ai-news command
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+# Run the ai-news command with uv
+uv run python -m ai_news.cli "$@"

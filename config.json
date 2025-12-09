@@ -1,0 +1,494 @@
+{
+  "database_path": "ai_news.db",
+  "feeds": [
+    {
+      "name": "TechCrunch AI",
+      "url": "https://techcrunch.com/category/artificial-intelligence/feed/",
+      "category": "tech",
+      "enabled": true,
+      "ai_keywords": [
+        "artificial intelligence",
+        "machine learning",
+        "deep learning",
+        "neural network",
+        "LLM",
+        "GPT",
+        "ChatGPT",
+        "OpenAI",
+        "Anthropic",
+        "AI",
+        "ML",
+        "AGI",
+        "transformer",
+        "BERT",
+        "NLP",
+        "computer vision"
+      ]
+    },
+    {
+      "name": "MIT Technology Review AI",
+      "url": "https://www.technologyreview.com/topic/artificial-intelligence/feed/",
+      "category": "research",
+      "enabled": true,
+      "ai_keywords": [
+        "artificial intelligence",
+        "machine learning",
+        "deep learning",
+        "neural network",
+        "LLM",
+        "GPT",
+        "ChatGPT",
+        "OpenAI",
+        "Anthropic",
+        "AI",
+        "ML",
+        "AGI",
+        "transformer",
+        "BERT",
+        "NLP",
+        "computer vision"
+      ]
+    },
+    {
+      "name": "Ars Technica AI",
+      "url": "https://arstechnica.com/tag/artificial-intelligence/feed/",
+      "category": "tech",
+      "enabled": true,
+      "ai_keywords": [
+        "artificial intelligence",
+        "machine learning",
+        "deep learning",
+        "neural network",
+        "LLM",
+        "GPT",
+        "ChatGPT",
+        "OpenAI",
+        "Anthropic",
+        "AI",
+        "ML",
+        "AGI",
+        "transformer",
+        "BERT",
+        "NLP",
+        "computer vision"
+      ]
+    },
+    {
+      "name": "Towards Data Science",
+      "url": "https://towardsdatascience.com/feed",
+      "category": "tutorial",
+      "enabled": true,
+      "ai_keywords": [
+        "artificial intelligence",
+        "machine learning",
+        "deep learning",
+        "neural network",
+        "LLM",
+        "GPT",
+        "ChatGPT",
+        "OpenAI",
+        "Anthropic",
+        "AI",
+        "ML",
+        "AGI",
+        "transformer",
+        "BERT",
+        "NLP",
+        "computer vision"
+      ]
+    },
+    {
+      "name": "arXiv Computer Science - Machine Learning",
+      "url": "http://rss.arxiv.org/rss/cs.LG",
+      "category": "research",
+      "enabled": true,
+      "ai_keywords": [
+        "machine learning",
+        "neural network",
+        "deep learning",
+        "algorithm"
+      ]
+    },
+    {
+      "name": "Hacker News",
+      "url": "https://hnrss.org/frontpage",
+      "category": "general",
+      "enabled": true,
+      "ai_keywords": [
+        "AI",
+        "artificial intelligence",
+        "machine learning",
+        "OpenAI",
+        "GPT"
+      ]
+    },
+    {
+      "name": "Reuters AI News",
+      "url": "https://www.reuters.com/archis/rss/ai-automation-intelligence",
+      "category": "tech",
+      "enabled": true,
+      "ai_keywords": [
+        "artificial intelligence",
+        "AI",
+        "machine learning",
+        "automation",
+        "algorithms",
+        "deep learning",
+        "neural networks"
+      ]
+    },
+    {
+      "name": "Bloomberg Technology",
+      "url": "https://feeds.bloomberg.com/technology/news.rss",
+      "category": "tech",
+      "enabled": true,
+      "ai_keywords": [
+        "artificial intelligence",
+        "AI",
+        "machine learning",
+        "fintech",
+        "automation",
+        "software",
+        "algorithms"
+      ]
+    },
+    {
+      "name": "CNBC Technology",
+      "url": "https://www.cnbc.com/id/19832330/device/rss/rss.html",
+      "category": "tech",
+      "enabled": true,
+      "ai_keywords": [
+        "artificial intelligence",
+        "AI",
+        "machine learning",
+        "tech",
+        "automation",
+        "software",
+        "startups"
+      ]
+    },
+    {
+      "name": "BBC Technology",
+      "url": "https://feeds.bbci.co.uk/news/technology/rss.xml",
+      "category": "tech",
+      "enabled": true,
+      "ai_keywords": [
+        "artificial intelligence",
+        "AI",
+        "machine learning",
+        "technology",
+        "automation",
+        "software"
+      ]
+    },
+    {
+      "name": "The Verge - AI",
+      "url": "https://www.theverge.com/ai-artificial-intelligence/rss.xml",
+      "category": "tech",
+      "enabled": true,
+      "ai_keywords": [
+        "artificial intelligence",
+        "AI",
+        "machine learning",
+        "LLM",
+        "ChatGPT",
+        "OpenAI",
+        "Anthropic",
+        "tech"
+      ]
+    },
+    {
+      "name": "Fierce Healthcare",
+      "url": "https://www.fiercehealthcare.com/rss/xml",
+      "category": "healthcare",
+      "enabled": true,
+      "ai_keywords": [
+        "artificial intelligence",
+        "AI",
+        "machine learning",
+        "healthcare",
+        "medical",
+        "digital health",
+        "diagnosis",
+        "treatment"
+      ]
+    },
+    {
+      "name": "MobiHealthNews",
+      "url": "https://www.mobihealthnews.com/rss/feed",
+      "category": "healthcare",
+      "enabled": true,
+      "ai_keywords": [
+        "artificial intelligence",
+        "AI",
+        "machine learning",
+        "healthcare",
+        "digital health",
+        "medical technology"
+      ]
+    },
+    {
+      "name": "FinTech Futures",
+      "url": "https://www.finextra.com/press-releases/rss",
+      "category": "finance",
+      "enabled": true,
+      "ai_keywords": [
+        "artificial intelligence",
+        "AI",
+        "machine learning",
+        "fintech",
+        "banking",
+        "insurance",
+        "automation",
+        "algorithms"
+      ]
+    },
+    {
+      "name": "American Banker",
+      "url": "https://www.americanbanker.com/rss/news",
+      "category": "finance",
+      "enabled": true,
+      "ai_keywords": [
+        "artificial intelligence",
+        "AI",
+        "machine learning",
+        "fintech",
+        "banking",
+        "automation",
+        "algorithms"
+      ]
+    },
+    {
+      "name": "Insurance Journal",
+      "url": "https://www.insurancejournal.com/feed/",
+      "category": "insurance",
+      "enabled": true,
+      "ai_keywords": [
+        "artificial intelligence",
+        "AI",
+        "machine learning",
+        "insurtech",
+        "algorithmic",
+        "automation",
+        "predictive analytics",
+        "data science",
+        "deep learning",
+        "neural network",
+        "digital transformation",
+        "claims automation",
+        "underwriting AI"
+      ]
+    },
+    {
+      "name": "Insurance Business America",
+      "url": "https://www.insurancebusinessmag.com/us/feed/",
+      "category": "insurance",
+      "enabled": true,
+      "ai_keywords": [
+        "artificial intelligence",
+        "AI",
+        "machine learning",
+        "insurtech",
+        "algorithmic",
+        "automation",
+        "predictive analytics",
+        "claims automation",
+        "underwriting AI",
+        "digital insurance"
+      ]
+    },
+    {
+      "name": "Wired",
+      "url": "https://www.wired.com/feed/rss",
+      "category": "tech",
+      "enabled": true,
+      "ai_keywords": [
+        "artificial intelligence",
+        "AI",
+        "machine learning",
+        "technology",
+        "automation",
+        "algorithm"
+      ]
+    },
+    {
+      "name": "The Verge",
+      "url": "https://www.theverge.com/rss/index.xml",
+      "category": "tech",
+      "enabled": true,
+      "ai_keywords": [
+        "artificial intelligence",
+        "AI",
+        "machine learning",
+        "tech",
+        "technology",
+        "automation"
+      ]
+    },
+    {
+      "name": "Fast Company",
+      "url": "https://www.fastcompany.com/rss",
+      "category": "business",
+      "enabled": true,
+      "ai_keywords": [
+        "artificial intelligence",
+        "AI",
+        "machine learning",
+        "business",
+        "innovation",
+        "automation"
+      ]
+    },
+    {
+      "name": "AI News",
+      "url": "https://artificialintelligence-news.com/feed/",
+      "category": "tech",
+      "enabled": true,
+      "ai_keywords": [
+        "artificial intelligence",
+        "AI",
+        "machine learning",
+        "LLM",
+        "ChatGPT",
+        "OpenAI",
+        "Anthropic",
+        "deep learning"
+      ]
+    },
+    {
+      "name": "VentureBeat AI",
+      "url": "https://venturebeat.com/ai/feed/",
+      "category": "tech",
+      "enabled": true,
+      "ai_keywords": [
+        "artificial intelligence",
+        "AI",
+        "machine learning",
+        "LLM",
+        "ChatGPT",
+        "OpenAI",
+        "startups",
+        "venture capital"
+      ]
+    },
+    {
+      "name": "The Register - AI",
+      "url": "https://www.theregister.com/artificial_intelligence/headlines.atom",
+      "category": "tech",
+      "enabled": true,
+      "ai_keywords": [
+        "artificial intelligence",
+        "AI",
+        "machine learning",
+        "LLM",
+        "automation",
+        "enterprise tech"
+      ]
+    },
+    {
+      "name": "InfoWorld",
+      "url": "https://www.infoworld.com/category/artificial-intelligence/rss.xml",
+      "category": "tech",
+      "enabled": true,
+      "ai_keywords": [
+        "artificial intelligence",
+        "AI",
+        "machine learning",
+        "enterprise",
+        "automation",
+        "software"
+      ]
+    },
+    {
+      "name": "KDnuggets",
+      "url": "https://www.kdnuggets.com/feed/",
+      "category": "research",
+      "enabled": true,
+      "ai_keywords": [
+        "artificial intelligence",
+        "AI",
+        "machine learning",
+        "data science",
+        "analytics",
+        "algorithms",
+        "research"
+      ]
+    },
+    {
+      "name": "DeepMind Blog",
+      "url": "https://deepmind.google/blog/feed/",
+      "category": "research",
+      "enabled": true,
+      "ai_keywords": [
+        "artificial intelligence",
+        "AI",
+        "machine learning",
+        "deep learning",
+        "neural networks",
+        "research"
+      ]
+    },
+    {
+      "name": "OpenAI Blog",
+      "url": "https://openai.com/blog/rss.xml",
+      "category": "research",
+      "enabled": true,
+      "ai_keywords": [
+        "artificial intelligence",
+        "AI",
+        "machine learning",
+        "GPT",
+        "LLM",
+        "ChatGPT",
+        "research"
+      ]
+    },
+    {
+      "name": "Anthropic Blog",
+      "url": "https://www.anthropic.com/news/rss",
+      "category": "research",
+      "enabled": true,
+      "ai_keywords": [
+        "artificial intelligence",
+        "AI",
+        "machine learning",
+        "Claude",
+        "LLM",
+        "research",
+        "safety"
+      ]
+    },
+    {
+      "name": "Google AI Blog",
+      "url": "https://ai.googleblog.com/feeds/posts/default",
+      "category": "research",
+      "enabled": true,
+      "ai_keywords": [
+        "artificial intelligence",
+        "AI",
+        "machine learning",
+        "deep learning",
+        "research",
+        "Google",
+        "TensorFlow"
+      ]
+    },
+    {
+      "name": "Microsoft Research",
+      "url": "https://www.microsoft.com/en-us/research/blog/feed/",
+      "category": "research",
+      "enabled": true,
+      "ai_keywords": [
+        "artificial intelligence",
+        "AI",
+        "machine learning",
+        "research",
+        "Microsoft",
+        "Azure",
+        "enterprise"
+      ]
+    }
+  ],
+  "max_articles_per_feed": 50,
+  "collection_interval_hours": 6
+}
