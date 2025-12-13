@@ -2,7 +2,42 @@
 
 from pathlib import Path
 from typing import List, Dict, Any
+from dataclasses import dataclass, field
 import json
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ScheduleConfig:
+    """Configuration for news collection scheduling."""
+    enabled: bool = True
+    interval_minutes: int = 360  # 6 hours
+    timezone: str = "UTC"
+    max_retries: int = 3
+    retry_delay_minutes: int = 5
+    
+    def to_dict(self) -> dict:
+        """Convert ScheduleConfig to dictionary."""
+        return {
+            "enabled": self.enabled,
+            "interval_minutes": self.interval_minutes,
+            "timezone": self.timezone,
+            "max_retries": self.max_retries,
+            "retry_delay_minutes": self.retry_delay_minutes
+        }
+    
+    @classmethod
+    def from_dict(cls, data: dict) -> "ScheduleConfig":
+        """Create ScheduleConfig from dictionary."""
+        return cls(
+            enabled=data.get("enabled", True),
+            interval_minutes=data.get("interval_minutes", 360),
+            timezone=data.get("timezone", "UTC"),
+            max_retries=data.get("max_retries", 3),
+            retry_delay_minutes=data.get("retry_delay_minutes", 5)
+        )
 
 
 class FeedConfig:
@@ -10,9 +45,17 @@ class FeedConfig:
     
     def __init__(self, name: str, url: str, category: str = "general", 
                  enabled: bool = True, ai_keywords: List[str] | None = None):
-        self.name = name
-        self.url = url
-        self.category = category
+        # Validate inputs
+        if not name or not name.strip():
+            raise ValueError("Feed name cannot be empty")
+        if not url or not url.strip():
+            raise ValueError("Feed URL cannot be empty")
+        if not url.startswith(('http://', 'https://')):
+            raise ValueError(f"Invalid URL format: {url}")
+        
+        self.name = name.strip()
+        self.url = url.strip()
+        self.category = category.strip().lower() if category else "general"
         self.enabled = enabled
         self.ai_keywords = ai_keywords or [
             "artificial intelligence", "machine learning", "deep learning",
@@ -31,18 +74,40 @@ class FeedConfig:
     
     @classmethod
     def from_dict(cls, data: dict) -> "FeedConfig":
-        return cls(**data)
+        try:
+            return cls(**data)
+        except (TypeError, ValueError) as e:
+            logger.error(f"Invalid feed configuration: {e}")
+            raise ValueError(f"Invalid feed configuration: {e}")
 
 
 class Config:
     """Main application configuration."""
     
     def __init__(self, database_path: str = "ai_news.db", feeds: List[FeedConfig] | None = None,
-                 max_articles_per_feed: int = 50, collection_interval_hours: int = 6):
+                 max_articles_per_feed: int = 50, collection_interval_hours: int = 6,
+                 schedule: ScheduleConfig | None = None):
+        # Validate inputs
+        if max_articles_per_feed <= 0:
+            raise ValueError("max_articles_per_feed must be positive")
+        if collection_interval_hours <= 0:
+            raise ValueError("collection_interval_hours must be positive")
+        
         self.database_path = database_path
         self.feeds = feeds or []
         self.max_articles_per_feed = max_articles_per_feed
         self.collection_interval_hours = collection_interval_hours
+        self.schedule = schedule or ScheduleConfig()
+
+    def to_dict(self) -> dict:
+        """Convert Config to dictionary."""
+        return {
+            "database_path": self.database_path,
+            "feeds": [feed.to_dict() for feed in self.feeds],
+            "max_articles_per_feed": self.max_articles_per_feed,
+            "collection_interval_hours": self.collection_interval_hours,
+            "schedule": self.schedule.to_dict()
+        }
 
     @classmethod
     def load(cls, config_path: Path) -> "Config":
@@ -53,16 +118,28 @@ class Config:
             default_config.save(config_path)
             return default_config
         
-        with open(config_path, 'r') as f:
-            data = json.load(f)
+        try:
+            with open(config_path, 'r') as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, IOError) as e:
+            logger.error(f"Error loading config from {config_path}: {e}")
+            logger.info("Creating default configuration instead")
+            default_config = cls._create_default()
+            default_config.save(config_path)
+            return default_config
         
         feeds = [FeedConfig.from_dict(feed_data) for feed_data in data.get("feeds", [])]
+        
+        # Parse schedule configuration if present
+        schedule_data = data.get("schedule", {})
+        schedule = ScheduleConfig.from_dict(schedule_data) if schedule_data else ScheduleConfig()
         
         return cls(
             database_path=data.get("database_path", "ai_news.db"),
             feeds=feeds,
             max_articles_per_feed=data.get("max_articles_per_feed", 50),
-            collection_interval_hours=data.get("collection_interval_hours", 6)
+            collection_interval_hours=data.get("collection_interval_hours", 6),
+            schedule=schedule
         )
 
     def save(self, config_path: Path) -> None:
@@ -71,7 +148,8 @@ class Config:
             "database_path": self.database_path,
             "feeds": [feed.to_dict() for feed in self.feeds],
             "max_articles_per_feed": self.max_articles_per_feed,
-            "collection_interval_hours": self.collection_interval_hours
+            "collection_interval_hours": self.collection_interval_hours,
+            "schedule": self.schedule.to_dict()
         }
         
         with open(config_path, 'w') as f:
