@@ -7,7 +7,7 @@ from pathlib import Path
 import tempfile
 import json
 
-from ai_news.config import Config, FeedConfig
+from src.ai_news.config import Config, FeedConfig
 
 
 class TestScheduleConfig:
@@ -23,47 +23,44 @@ class TestScheduleConfig:
         
         # Test default values
         schedule = ScheduleConfig()
-        assert schedule.enabled is True
-        assert schedule.interval_minutes == 360
-        assert schedule.timezone == "UTC"
-        assert schedule.max_retries == 3
-        assert schedule.retry_delay_minutes == 5
+        assert schedule.enabled is False
+        assert schedule.interval == "daily"
+        assert schedule.last_collection is None
+        assert schedule.next_collection is None
 
     def test_schedule_config_custom_values(self):
         """Test ScheduleConfig with custom values."""
         from ai_news.config import ScheduleConfig
         
         schedule = ScheduleConfig(
-            enabled=False,
-            interval_minutes=720,
-            timezone="America/New_York",
-            max_retries=5,
-            retry_delay_minutes=10
+            enabled=True,
+            interval="hourly",
+            last_collection="2025-12-13T10:30:00Z",
+            next_collection="2025-12-13T11:30:00Z"
         )
         
-        assert schedule.enabled is False
-        assert schedule.interval_minutes == 720
-        assert schedule.timezone == "America/New_York"
-        assert schedule.max_retries == 5
-        assert schedule.retry_delay_minutes == 10
+        assert schedule.enabled is True
+        assert schedule.interval == "hourly"
+        assert schedule.last_collection == "2025-12-13T10:30:00Z"
+        assert schedule.next_collection == "2025-12-13T11:30:00Z"
 
     def test_schedule_config_to_dict(self):
         """Test ScheduleConfig to_dict method."""
         from ai_news.config import ScheduleConfig
         
         schedule = ScheduleConfig(
-            enabled=False,
-            interval_minutes=120,
-            timezone="Europe/London"
+            enabled=True,
+            interval="weekly",
+            last_collection="2025-12-12T10:30:00Z",
+            next_collection="2025-12-19T10:30:00Z"
         )
         
         result = schedule.to_dict()
         expected = {
-            "enabled": False,
-            "interval_minutes": 120,
-            "timezone": "Europe/London",
-            "max_retries": 3,
-            "retry_delay_minutes": 5
+            "enabled": True,
+            "interval": "weekly",
+            "last_collection": "2025-12-12T10:30:00Z",
+            "next_collection": "2025-12-19T10:30:00Z"
         }
         
         assert result == expected
@@ -73,20 +70,18 @@ class TestScheduleConfig:
         from ai_news.config import ScheduleConfig
         
         data = {
-            "enabled": True,
-            "interval_minutes": 180,
-            "timezone": "Asia/Tokyo",
-            "max_retries": 2,
-            "retry_delay_minutes": 15
+            "enabled": False,
+            "interval": "daily",
+            "last_collection": "2025-12-13T09:00:00Z",
+            "next_collection": "2025-12-14T09:00:00Z"
         }
         
         schedule = ScheduleConfig.from_dict(data)
         
-        assert schedule.enabled is True
-        assert schedule.interval_minutes == 180
-        assert schedule.timezone == "Asia/Tokyo"
-        assert schedule.max_retries == 2
-        assert schedule.retry_delay_minutes == 15
+        assert schedule.enabled is False
+        assert schedule.interval == "daily"
+        assert schedule.last_collection == "2025-12-13T09:00:00Z"
+        assert schedule.next_collection == "2025-12-14T09:00:00Z"
 
 
 class TestConfigWithSchedule:
@@ -95,15 +90,15 @@ class TestConfigWithSchedule:
     def test_config_has_schedule_field(self):
         """Test that Config class has schedule field."""
         # Create config with schedule
-        from ai_news.config import ScheduleConfig
+        from src.ai_news.config import ScheduleConfig
         
-        schedule = ScheduleConfig(enabled=False, interval_minutes=120)
+        schedule = ScheduleConfig(enabled=True, interval="hourly")
         config = Config(schedule=schedule)
         
         assert hasattr(config, 'schedule')
         assert config.schedule is schedule
-        assert config.schedule.enabled is False
-        assert config.schedule.interval_minutes == 120
+        assert config.schedule.enabled is True
+        assert config.schedule.interval == "hourly"
 
     def test_config_default_schedule(self):
         """Test Config gets default schedule when none provided."""
@@ -111,14 +106,14 @@ class TestConfigWithSchedule:
         
         assert hasattr(config, 'schedule')
         assert config.schedule is not None
-        assert config.schedule.enabled is True
-        assert config.schedule.interval_minutes == 360
+        assert config.schedule.enabled is False
+        assert config.schedule.interval == "daily"
 
     def test_config_to_dict_includes_schedule(self):
         """Test Config.to_dict includes schedule information."""
-        from ai_news.config import ScheduleConfig
+        from src.ai_news.config import ScheduleConfig
         
-        schedule = ScheduleConfig(enabled=False, interval_minutes=240)
+        schedule = ScheduleConfig(enabled=True, interval="weekly")
         config = Config(
             database_path="test.db",
             max_articles_per_feed=25,
@@ -129,8 +124,8 @@ class TestConfigWithSchedule:
         result = config.to_dict()
         
         assert "schedule" in result
-        assert result["schedule"]["enabled"] is False
-        assert result["schedule"]["interval_minutes"] == 240
+        assert result["schedule"]["enabled"] is True
+        assert result["schedule"]["interval"] == "weekly"
 
     def test_config_load_includes_schedule(self):
         """Test Config.load includes schedule from JSON."""
@@ -140,11 +135,10 @@ class TestConfigWithSchedule:
             "max_articles_per_feed": 30,
             "collection_interval_hours": 12,
             "schedule": {
-                "enabled": False,
-                "interval_minutes": 480,
-                "timezone": "Europe/Paris",
-                "max_retries": 5,
-                "retry_delay_minutes": 20
+                "enabled": True,
+                "interval": "hourly",
+                "last_collection": "2025-12-13T08:00:00Z",
+                "next_collection": "2025-12-13T09:00:00Z"
             }
         }
         
@@ -156,19 +150,18 @@ class TestConfigWithSchedule:
             config = Config.load(config_path)
             
             assert hasattr(config, 'schedule')
-            assert config.schedule.enabled is False
-            assert config.schedule.interval_minutes == 480
-            assert config.schedule.timezone == "Europe/Paris"
-            assert config.schedule.max_retries == 5
-            assert config.schedule.retry_delay_minutes == 20
+            assert config.schedule.enabled is True
+            assert config.schedule.interval == "hourly"
+            assert config.schedule.last_collection == "2025-12-13T08:00:00Z"
+            assert config.schedule.next_collection == "2025-12-13T09:00:00Z"
         finally:
             config_path.unlink()
 
     def test_config_save_includes_schedule(self):
         """Test Config.save includes schedule in JSON."""
-        from ai_news.config import ScheduleConfig
+        from src.ai_news.config import ScheduleConfig
         
-        schedule = ScheduleConfig(enabled=True, interval_minutes=60, timezone="UTC")
+        schedule = ScheduleConfig(enabled=True, interval="daily", last_collection="2025-12-13T10:00:00Z")
         config = Config(schedule=schedule)
         
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
@@ -183,8 +176,8 @@ class TestConfigWithSchedule:
             
             assert "schedule" in saved_data
             assert saved_data["schedule"]["enabled"] is True
-            assert saved_data["schedule"]["interval_minutes"] == 60
-            assert saved_data["schedule"]["timezone"] == "UTC"
+            assert saved_data["schedule"]["interval"] == "daily"
+            assert saved_data["schedule"]["last_collection"] == "2025-12-13T10:00:00Z"
         finally:
             config_path.unlink()
 
@@ -207,7 +200,7 @@ class TestConfigWithSchedule:
             
             assert hasattr(config, 'schedule')
             assert config.schedule is not None
-            assert config.schedule.enabled is True  # Default value
-            assert config.schedule.interval_minutes == 360  # Default value
+            assert config.schedule.enabled is False  # Default value
+            assert config.schedule.interval == "daily"  # Default value
         finally:
             config_path.unlink()
