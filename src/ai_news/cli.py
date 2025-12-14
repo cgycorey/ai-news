@@ -414,6 +414,89 @@ def print_schedule_status(config):
     print("="*50)
 
 
+def handle_feeds_command(args, config):
+    """Handle feed management commands."""
+    
+    if args.feeds_command == 'add':
+        # Create new feed
+        ai_keywords = []
+        if getattr(args, 'ai_keywords', None):
+            ai_keywords = [kw.strip() for kw in args.ai_keywords.split(',')]
+        
+        from .config import FeedConfig, RegionConfig
+        new_feed = FeedConfig(
+            name=args.name,
+            url=args.url,
+            category=args.category,
+            enabled=getattr(args, 'enabled', True),
+            ai_keywords=ai_keywords
+        )
+        
+        # Add to specified region
+        region = getattr(args, 'region', 'global')
+        if region not in config.regions:
+            config.regions[region] = RegionConfig(name=region.title())
+        
+        config.regions[region].feeds.append(new_feed)
+        config.save(config.config_path)
+        
+        print(f"✅ Added '{args.name}' to {region.upper()} region")
+        
+    elif args.feeds_command == 'list':
+        region = getattr(args, 'region', None)
+        
+        if region:
+            # List feeds for specific region
+            if region in config.regions:
+                feeds = config.regions[region].feeds
+                print(f"\n📡 Feeds for {region.upper()} region:")
+                print("-" * 50)
+                
+                for i, feed in enumerate(feeds, 1):
+                    status = "ENABLED" if feed.enabled else "DISABLED"
+                    print(f"{i}. [{status}] {feed.name} ({feed.category})")
+                    print(f"   URL: {feed.url}")
+                    print(f"   AI keywords: {len(feed.ai_keywords)}")
+                    print()
+            else:
+                print(f"❌ No feeds found for region: {region}")
+        else:
+            # List all feeds by region
+            print("\n🌍 All Feeds by Region:")
+            print("=" * 50)
+            
+            for region_code, region_config in config.regions.items():
+                if region_config.feeds:
+                    print(f"\n{region_code.upper()} ({region_config.name}):")
+                    for feed in region_config.feeds:
+                        status = "✅" if feed.enabled else "❌"
+                        print(f"  {status} {feed.name}")
+    
+    elif args.feeds_command == 'remove':
+        region = getattr(args, 'region', 'global')
+        feed_name = args.name
+        
+        if region in config.regions:
+            feeds = config.regions[region].feeds
+            original_count = len(feeds)
+            
+            # Remove feed by name
+            config.regions[region].feeds = [
+                feed for feed in feeds if feed.name != feed_name
+            ]
+            
+            if len(config.regions[region].feeds) < original_count:
+                config.save(config.config_path)
+                print(f"✅ Removed '{feed_name}' from {region.upper()} region")
+            else:
+                print(f"❌ Feed '{feed_name}' not found in {region.upper()} region")
+        else:
+            print(f"❌ No feeds found for region: {region}")
+    
+    else:
+        print("❌ Unknown feeds command. Use --help to see available commands.")
+
+
 def main():
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(description='AI News Collector - Simple RSS-based news feeder')
@@ -572,7 +655,30 @@ def main():
     schedule_cron_parser = schedule_subparsers.add_parser('cron-setup', help='Show cron setup instructions')
     
     # Schedule clear command
-    schedule_clear_parser = schedule_subparsers.add_parser('clear', help='Clear schedule settings')
+    schedule_clear_parser = subparsers.add_parser('clear', help='Clear schedule settings')
+    
+    # Feeds management commands
+    feeds_parser = subparsers.add_parser('feeds', help='Manage RSS feeds')
+    feeds_subparsers = feeds_parser.add_subparsers(dest='feeds_command', help='Feed operations')
+    
+    # Feeds add command
+    feeds_add_parser = feeds_subparsers.add_parser('add', help='Add a new RSS feed')
+    feeds_add_parser.add_argument('--name', required=True, help='Feed name')
+    feeds_add_parser.add_argument('--url', required=True, help='Feed URL')
+    feeds_add_parser.add_argument('--category', default='general', help='Feed category')
+    feeds_add_parser.add_argument('--region', choices=['us', 'uk', 'eu', 'apac', 'global'], default='global', help='Target region')
+    feeds_add_parser.add_argument('--enabled', action='store_true', default=True, help='Enable feed')
+    feeds_add_parser.add_argument('--ai-keywords', help='Comma-separated AI keywords')
+    
+    # Feeds list command
+    feeds_list_parser = feeds_subparsers.add_parser('list', help='List feeds')
+    feeds_list_parser.add_argument('--region', choices=['us', 'uk', 'eu', 'apac', 'global'], help='List feeds for specific region')
+    feeds_list_parser.add_argument('--enabled-only', action='store_true', help='Show only enabled feeds')
+    
+    # Feeds remove command
+    feeds_remove_parser = feeds_subparsers.add_parser('remove', help='Remove a feed')
+    feeds_remove_parser.add_argument('name', help='Feed name to remove')
+    feeds_remove_parser.add_argument('--region', choices=['us', 'uk', 'eu', 'apac', 'global'], help='Region to remove from')
     
     # Parse arguments
     args = parser.parse_args()
@@ -897,6 +1003,9 @@ def main():
             
         elif args.command == 'schedule':
             handle_schedule_command(args, config, database)
+            
+        elif args.command == 'feeds':
+            handle_feeds_command(args, config)
             
     except KeyboardInterrupt:
         print("\nOperation cancelled by user.")
