@@ -50,10 +50,10 @@ def print_stats(stats):
     print("="*50)
 
 
-def print_db_stats(db_stats):
+def print_db_stats(db_stats, region_text=""):
     """Print database statistics."""
     print("\n" + "="*50)
-    print("DATABASE STATISTICS")
+    print(f"DATABASE STATISTICS{region_text}")
     print("="*50)
     print(f"Total articles:      {db_stats['total_articles']}")
     print(f"AI-relevant articles: {db_stats['ai_relevant_articles']}")
@@ -424,20 +424,26 @@ def main():
     
     # Collect command
     collect_parser = subparsers.add_parser('collect', help='Collect news from RSS feeds')
+    collect_parser.add_argument('--region', choices=['us', 'uk', 'eu', 'apac', 'global'], help='Collect from specific region only')
+    collect_parser.add_argument('--regions', help='Collect from multiple regions (comma-separated)')
     
     # List command
     list_parser = subparsers.add_parser('list', help='List recent articles')
     list_parser.add_argument('--limit', type=int, default=20, help='Number of articles to show')
     list_parser.add_argument('--ai-only', action='store_true', help='Show only AI-relevant articles')
+    list_parser.add_argument('--region', choices=['us', 'uk', 'eu', 'apac', 'global'], help='Filter by region')
     
     # Search command
     search_parser = subparsers.add_parser('search', help='Search articles')
     search_parser.add_argument('query', help='Search query')
     search_parser.add_argument('--limit', type=int, default=20, help='Number of articles to show')
     search_parser.add_argument('--ai-only', action='store_true', help='Show only AI-relevant articles')
+    search_parser.add_argument('--region', choices=['us', 'uk', 'eu', 'apac', 'global'], help='Filter by region')
     
     # Stats command
     stats_parser = subparsers.add_parser('stats', help='Show database statistics')
+    stats_parser.add_argument('--region', choices=['us', 'uk', 'eu', 'apac', 'global'], help='Show statistics for specific region')
+    stats_parser.add_argument('--all-regions', action='store_true', help='Show statistics for all regions')
     
     # Config command
     config_parser = subparsers.add_parser('config', help='Show current configuration')
@@ -606,26 +612,55 @@ def main():
     # Execute command
     try:
         if args.command == 'collect':
-            print("Starting news collection...")
-            collector = SimpleCollector(database)
-            stats = collector.collect_all_feeds(config.feeds)
-            print_stats(stats)
+            if getattr(args, 'region', None):
+                # Collect from specific region
+                region_feeds = config.get_feeds_by_region(args.region)
+                if not region_feeds:
+                    print(f"No feeds found for region: {args.region}")
+                    return
+                print(f"Starting news collection from {args.region.upper()} region...")
+                collector = SimpleCollector(database)
+                stats = collector.collect_all_feeds(region_feeds)
+                print_stats(stats)
+            elif getattr(args, 'regions', None):
+                # Collect from multiple regions
+                regions = [r.strip() for r in args.regions.split(',')]
+                all_feeds = []
+                for region in regions:
+                    region_feeds = config.get_feeds_by_region(region)
+                    all_feeds.extend(region_feeds)
+                
+                if not all_feeds:
+                    print(f"No feeds found for regions: {', '.join(regions)}")
+                    return
+                    
+                print(f"Starting news collection from regions: {', '.join(regions).upper()}...")
+                collector = SimpleCollector(database)
+                stats = collector.collect_all_feeds(all_feeds)
+                print_stats(stats)
+            else:
+                # Original behavior - collect from all feeds
+                print("Starting news collection...")
+                collector = SimpleCollector(database)
+                stats = collector.collect_all_feeds(config.feeds)
+                print_stats(stats)
             
         elif args.command == 'list':
-            articles = database.get_articles(limit=args.limit, ai_only=args.ai_only)
+            articles = database.get_articles(limit=args.limit, ai_only=args.ai_only, region=getattr(args, 'region', None))
             
             if not articles:
                 print("No articles found.")
                 return
             
-            print(f"\nShowing {len(articles)} recent articles:")
+            region_text = f" ({args.region.upper()})" if getattr(args, 'region', None) else ""
+            print(f"\nShowing {len(articles)} recent articles{region_text}:")
             print("-" * 80)
             
             for i, article in enumerate(articles, 1):
                 print_article_summary(article, i)
                 
         elif args.command == 'search':
-            all_articles = database.search_articles(args.query, limit=args.limit * 2)  # Get more to filter
+            all_articles = database.search_articles(args.query, limit=args.limit * 2, region=getattr(args, 'region', None))
             
             if args.ai_only:
                 articles = [a for a in all_articles if a.ai_relevant][:args.limit]
@@ -636,15 +671,32 @@ def main():
                 print(f"No articles found for '{args.query}'.")
                 return
             
-            print(f"\nFound {len(articles)} articles matching '{args.query}':")
+            region_text = f" in {args.region.upper()}" if getattr(args, 'region', None) else ""
+            print(f"\nFound {len(articles)} articles matching '{args.query}'{region_text}:")
             print("-" * 80)
             
             for i, article in enumerate(articles, 1):
                 print_article_summary(article, i)
                 
         elif args.command == 'stats':
-            db_stats = database.get_stats()
-            print_db_stats(db_stats)
+            if getattr(args, 'all_regions', False):
+                # Show stats for all regions
+                print("\n" + "="*60)
+                print("REGIONAL DATABASE STATISTICS")
+                print("="*60)
+                
+                for region_code in ['us', 'uk', 'eu', 'apac', 'global']:
+                    region_stats = database.get_stats(region=region_code)
+                    if region_stats['total_articles'] > 0:
+                        print(f"\n{region_code.upper()} REGION:")
+                        print(f"  Total articles: {region_stats['total_articles']}")
+                        print(f"  AI-relevant: {region_stats['ai_relevant_articles']}")
+                        print(f"  Sources: {region_stats['sources_count']}")
+            else:
+                # Single region or global stats
+                db_stats = database.get_stats(region=getattr(args, 'region', None))
+                region_text = f" ({args.region.upper()})" if getattr(args, 'region', None) else ""
+                print_db_stats(db_stats, region_text)
             
         elif args.command == 'config':
             print_config(config)
