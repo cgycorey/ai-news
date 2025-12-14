@@ -2,6 +2,7 @@
 
 import sqlite3
 import shutil
+import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
@@ -20,6 +21,7 @@ class Article:
     published_at: Optional[datetime] = None
     source_name: str = ""
     category: str = ""
+    region: str = "global"
     ai_relevant: bool = False
     ai_keywords_found: Optional[List[str]] = None
 
@@ -86,6 +88,7 @@ class Database:
                     published_at TIMESTAMP,
                     source_name TEXT,
                     category TEXT,
+                    region TEXT DEFAULT 'global',
                     ai_relevant BOOLEAN DEFAULT FALSE,
                     ai_keywords_found TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -103,16 +106,20 @@ class Database:
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_ai_relevant ON articles(ai_relevant)
             """)
+            
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_region ON articles(region)
+            """)
     
-    def add_article(self, article: Article) -> bool:
-        """Add article to database, returns True if added (new), False if exists."""
+    def save_article(self, article: Article) -> Optional[int]:
+        """Save an article to the database."""
         try:
             with sqlite3.connect(self.db_path) as conn:
-                conn.execute("""
-                    INSERT OR IGNORE INTO articles 
+                cursor = conn.execute("""
+                    INSERT OR REPLACE INTO articles 
                     (title, content, summary, url, author, published_at, 
-                     source_name, category, ai_relevant, ai_keywords_found)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     source_name, category, region, ai_relevant, ai_keywords_found)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     article.title,
                     article.content,
@@ -122,6 +129,57 @@ class Database:
                     article.published_at,
                     article.source_name,
                     article.category,
+                    article.region,
+                    article.ai_relevant,
+                    ",".join(article.ai_keywords_found or [])
+                ))
+                return cursor.lastrowid
+        except sqlite3.Error as e:
+            print(f"Error saving article: {e}")
+            return None
+
+    def get_article_by_id(self, article_id: int) -> Optional[Article]:
+        """Get article by ID."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT * FROM articles WHERE id = ?", (article_id,)).fetchone()
+            
+            if row:
+                return Article(
+                    id=row['id'],
+                    title=row['title'],
+                    content=row['content'],
+                    summary=row['summary'],
+                    url=row['url'],
+                    author=row['author'] or "",
+                    published_at=datetime.fromisoformat(row['published_at']) if row['published_at'] else None,
+                    source_name=row['source_name'] or "",
+                    category=row['category'] or "",
+                    region=row['region'] or "global",
+                    ai_relevant=bool(row['ai_relevant']),
+                    ai_keywords_found=row['ai_keywords_found'].split(",") if row['ai_keywords_found'] else []
+                )
+            return None
+
+    def add_article(self, article: Article) -> bool:
+        """Add article to database, returns True if added (new), False if exists."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute("""
+                    INSERT OR IGNORE INTO articles 
+                    (title, content, summary, url, author, published_at, 
+                     source_name, category, region, ai_relevant, ai_keywords_found)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    article.title,
+                    article.content,
+                    article.summary,
+                    article.url,
+                    article.author,
+                    article.published_at,
+                    article.source_name,
+                    article.category,
+                    article.region,
                     article.ai_relevant,
                     ",".join(article.ai_keywords_found or [])
                 ))
@@ -130,16 +188,20 @@ class Database:
             print(f"Error adding article: {e}")
             return False
     
-    def get_articles(self, limit: int = 20, ai_only: bool = False) -> List[Article]:
-        """Get articles from database."""
+    def get_articles(self, limit: int = 20, ai_only: bool = False, region: Optional[str] = None) -> List[Article]:
+        """Get articles from database with optional region filtering."""
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             
-            query = "SELECT * FROM articles"
+            query = "SELECT * FROM articles WHERE 1=1"
             params = []
             
             if ai_only:
-                query += " WHERE ai_relevant = 1"
+                query += " AND ai_relevant = 1"
+            
+            if region:
+                query += " AND region = ?"
+                params.append(region.lower())
             
             query += " ORDER BY published_at DESC LIMIT ?"
             params.append(limit)
@@ -157,23 +219,33 @@ class Database:
                     published_at=datetime.fromisoformat(row['published_at']) if row['published_at'] else None,
                     source_name=row['source_name'] or "",
                     category=row['category'] or "",
+                    region=row['region'] or "global",
                     ai_relevant=bool(row['ai_relevant']),
                     ai_keywords_found=row['ai_keywords_found'].split(",") if row['ai_keywords_found'] else []
                 )
                 for row in rows
             ]
     
-    def search_articles(self, query: str, limit: int = 20) -> List[Article]:
-        """Search articles by title and content."""
+    def search_articles(self, query: str, limit: int = 20, region: Optional[str] = None) -> List[Article]:
+        """Search articles with optional region filtering."""
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             
-            rows = conn.execute("""
+            search_query = f"%{query}%"
+            sql = """
                 SELECT * FROM articles 
                 WHERE (title LIKE ? OR content LIKE ? OR summary LIKE ?)
-                ORDER BY published_at DESC 
-                LIMIT ?
-            """, (f"%{query}%", f"%{query}%", f"%{query}%", limit)).fetchall()
+            """
+            params = [search_query, search_query, search_query]
+            
+            if region:
+                sql += " AND region = ?"
+                params.append(region.lower())
+            
+            sql += " ORDER BY published_at DESC LIMIT ?"
+            params.append(limit)
+            
+            rows = conn.execute(sql, params).fetchall()
             
             return [
                 Article(
@@ -186,24 +258,31 @@ class Database:
                     published_at=datetime.fromisoformat(row['published_at']) if row['published_at'] else None,
                     source_name=row['source_name'] or "",
                     category=row['category'] or "",
+                    region=row['region'] or "global",
                     ai_relevant=bool(row['ai_relevant']),
                     ai_keywords_found=row['ai_keywords_found'].split(",") if row['ai_keywords_found'] else []
                 )
                 for row in rows
             ]
     
-    def get_stats(self) -> dict:
-        """Get database statistics."""
+    def get_stats(self, region: Optional[str] = None) -> Dict[str, Any]:
+        """Get database statistics with optional region filtering."""
+        query = "SELECT COUNT(*), SUM(ai_relevant), COUNT(DISTINCT source_name) FROM articles"
+        params = []
+        
+        if region:
+            query += " WHERE region = ?"
+            params.append(region.lower())
+        
         with sqlite3.connect(self.db_path) as conn:
-            total = conn.execute("SELECT COUNT(*) FROM articles").fetchone()[0]
-            ai_relevant = conn.execute("SELECT COUNT(*) FROM articles WHERE ai_relevant = 1").fetchone()[0]
-            sources = conn.execute("SELECT COUNT(DISTINCT source_name) FROM articles").fetchone()[0]
+            cursor = conn.execute(query, params)
+            total, ai_relevant, sources = cursor.fetchone()
             
             return {
-                "total_articles": total,
-                "ai_relevant_articles": ai_relevant,
-                "sources_count": sources,
-                "ai_relevance_rate": f"{(ai_relevant/total*100):.1f}%" if total > 0 else "0%"
+                'total_articles': total or 0,
+                'ai_relevant_articles': ai_relevant or 0,
+                'sources_count': sources or 0,
+                'ai_relevance_rate': f"{((ai_relevant or 0) / (total or 1) * 100):.1f}%" if total else "0%"
             }
     
     def cleanup_old_articles(self, days: int = 90, dry_run: bool = False) -> dict:
