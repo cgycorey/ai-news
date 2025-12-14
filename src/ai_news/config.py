@@ -77,30 +77,102 @@ class FeedConfig:
 
 
 @dataclass
+class RegionConfig:
+    """Configuration for a regional feed group."""
+    name: str
+    feeds: List[FeedConfig] = field(default_factory=list)
+    enabled: bool = True
+    collection_priority: int = 1  # 1=high, 2=medium, 3=low
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'RegionConfig':
+        feeds = [FeedConfig.from_dict(feed_data) for feed_data in data.get('feeds', [])]
+        return cls(
+            name=data.get('name', ''),
+            feeds=feeds,
+            enabled=data.get('enabled', True),
+            collection_priority=data.get('collection_priority', 1)
+        )
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'name': self.name,
+            'feeds': [feed.to_dict() for feed in self.feeds],
+            'enabled': self.enabled,
+            'collection_priority': self.collection_priority
+        }
+
+
+@dataclass
 class Config:
     """Main application configuration."""
     database_path: str = "ai_news.db"
-    feeds: List[FeedConfig] = field(default_factory=list)
+    regions: Dict[str, RegionConfig] = field(default_factory=dict)
+    feeds: List[FeedConfig] = field(default_factory=list)  # Backward compatibility
     max_articles_per_feed: int = 50
     collection_interval_hours: int = 6
     schedule: ScheduleConfig = field(default_factory=ScheduleConfig)
     config_path: Optional[Path] = field(default=None, init=False)
     
     def __post_init__(self):
+        # Initialize default regions if empty
+        if not self.regions:
+            self.regions = {
+                'us': RegionConfig(name='United States'),
+                'uk': RegionConfig(name='United Kingdom'), 
+                'eu': RegionConfig(name='European Union'),
+                'apac': RegionConfig(name='Asia-Pacific')
+            }
+        
+        # If feeds provided via old interface, migrate to global region
+        if self.feeds:
+            self.regions['global'] = RegionConfig(name='Global', feeds=self.feeds)
+        else:
+            # Sync feeds field with regions
+            self.feeds = self.get_all_feeds()
+        
         # Validate inputs
         if self.max_articles_per_feed <= 0:
             raise ValueError("max_articles_per_feed must be positive")
         if self.collection_interval_hours <= 0:
             raise ValueError("collection_interval_hours must be positive")
+    
+    @property
+    def all_feeds(self) -> List[FeedConfig]:
+        """Get all feeds from all regions (backward compatibility)."""
+        return self.get_all_feeds()
+    
+    def get_all_feeds(self) -> List[FeedConfig]:
+        """Get all feeds from all regions."""
+        all_feeds = []
+        for region in self.regions.values():
+            all_feeds.extend(region.feeds)
+        return all_feeds
+    
+    def get_feeds_by_region(self, region: str) -> List[FeedConfig]:
+        """Get feeds for specific region."""
+        if region.lower() in self.regions:
+            return self.regions[region.lower()].feeds
+        return []
+    
+    def get_enabled_regions(self) -> List[str]:
+        """Get list of enabled region codes."""
+        return [code for code, region in self.regions.items() if region.enabled]
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert Config to dictionary."""
         result = {
             "database_path": self.database_path,
-            "feeds": [feed.to_dict() for feed in self.feeds],
+            "regions": {code: region.to_dict() for code, region in self.regions.items()},
             "max_articles_per_feed": self.max_articles_per_feed,
             "collection_interval_hours": self.collection_interval_hours,
         }
+        
+        # Include feeds for backward compatibility
+        all_feeds = self.get_all_feeds()
+        if all_feeds:
+            result["feeds"] = [feed.to_dict() for feed in all_feeds]
+        
         if self.schedule:
             result['schedule'] = self.schedule.to_dict()
         return result
@@ -124,18 +196,37 @@ class Config:
             default_config.save(config_path)
             return default_config
         
+        # Handle backward compatibility
+        regions_data = data.pop('regions', {})
+        
+        # Migrate old feeds structure to 'global' region
+        if 'feeds' in data:
+            regions_data['global'] = {
+                'name': 'Global',
+                'feeds': data.pop('feeds'),
+                'enabled': True
+            }
+        
+        # Load regions
+        regions = {}
+        for region_code, region_data in regions_data.items():
+            regions[region_code] = RegionConfig.from_dict(region_data)
+        
         schedule_data = data.get('schedule', {})
         schedule = ScheduleConfig.from_dict(schedule_data)
         
-        # Rest of existing from_dict logic...
         config = cls(
             database_path=data.get('database_path', 'ai_news.db'),
-            feeds=[FeedConfig.from_dict(feed_data) for feed_data in data.get("feeds", [])],
+            regions=regions,
             max_articles_per_feed=data.get('max_articles_per_feed', 50),
             collection_interval_hours=data.get('collection_interval_hours', 6),
             schedule=schedule
         )
         config.config_path = config_path
+        
+        # Update feeds field for backward compatibility
+        config.feeds = config.get_all_feeds()
+        
         return config
 
     def save(self, config_path: Optional[Path] = None):
@@ -190,4 +281,15 @@ class Config:
             ),
         ]
         
-        return Config(feeds=default_feeds)
+        # Create regions with default feeds in global region
+        regions = {
+            'global': RegionConfig(name='Global', feeds=default_feeds),
+            'us': RegionConfig(name='United States'),
+            'uk': RegionConfig(name='United Kingdom'), 
+            'eu': RegionConfig(name='European Union'),
+            'apac': RegionConfig(name='Asia-Pacific')
+        }
+        
+        config = Config(regions=regions)
+        config.feeds = config.get_all_feeds()
+        return config
