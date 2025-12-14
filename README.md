@@ -562,6 +562,84 @@ ai-news schedule clear
 
 The tool will collect news from all configured RSS feeds on the specified schedule.
 
+## Regional News Collection
+
+The AI News tool supports region-specific news collection with separate feed groups for different geographic regions.
+
+### Supported Regions
+
+- **US** (us) - United States
+- **UK** (uk) - United Kingdom  
+- **EU** (eu) - European Union
+- **APAC** (apac) - Asia-Pacific
+- **Global** (global) - International/General feeds
+
+### Regional Commands
+
+#### Collect from Specific Region
+```bash
+# Collect from UK only
+uv run ai-news collect --region uk
+
+# Collect from multiple regions
+uv run ai-news collect --regions uk,eu
+
+# Collect from all regions (default)
+uv run ai-news collect
+```
+
+#### Filter Articles by Region
+```bash
+# List UK articles
+uv run ai-news list --region uk
+
+# Search within US region
+uv run ai-news search "fintech" --region us
+
+# Get statistics for all regions
+uv run ai-news stats --all-regions
+```
+
+#### Manage Regional Feeds
+```bash
+# Add feed to UK region
+uv run ai-news feeds add --region uk --name "UK Insurance News" --url "https://uk-insurance.com/rss" --category insurance
+
+# List UK feeds
+uv run ai-news feeds list --region uk
+
+# List all feeds by region
+uv run ai-news feeds list
+
+# Remove feed from region
+uv run ai-news feeds remove "UK Insurance News" --region uk
+```
+
+### Migration from Old Configuration
+
+If you have an existing configuration with flat feeds structure, run the migration script:
+
+```bash
+python scripts/migrate_to_regions.py config.json
+```
+
+This will:
+- Move existing feeds to 'global' region
+- Create empty regions for US, UK, EU, APAC
+- Backup your original config file
+
+### Regional Scheduling
+
+You can set up different collection schedules for each region:
+
+```bash
+# Set daily collection for UK feeds
+uv run ai-news schedule set daily --region uk
+
+# Set hourly collection for US feeds  
+uv run ai-news schedule set hourly --region us
+```
+
 ## 🔧 **Installation & Setup**
 
 ### **Method 1: Quick Setup (Recommended)**
