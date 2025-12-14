@@ -614,36 +614,35 @@ def main():
         if args.command == 'collect':
             if getattr(args, 'region', None):
                 # Collect from specific region
-                region_feeds = config.get_feeds_by_region(args.region)
-                if not region_feeds:
-                    print(f"No feeds found for region: {args.region}")
-                    return
-                print(f"Starting news collection from {args.region.upper()} region...")
                 collector = SimpleCollector(database)
-                stats = collector.collect_all_feeds(region_feeds)
+                stats = collector.collect_region(config, args.region)
                 print_stats(stats)
             elif getattr(args, 'regions', None):
                 # Collect from multiple regions
                 regions = [r.strip() for r in args.regions.split(',')]
-                all_feeds = []
-                for region in regions:
-                    region_feeds = config.get_feeds_by_region(region)
-                    all_feeds.extend(region_feeds)
+                collector = SimpleCollector(database)
+                stats = collector.collect_multiple_regions(config, regions)
                 
-                if not all_feeds:
-                    print(f"No feeds found for regions: {', '.join(regions)}")
-                    return
-                    
-                print(f"Starting news collection from regions: {', '.join(regions).upper()}...")
-                collector = SimpleCollector(database)
-                stats = collector.collect_all_feeds(all_feeds)
-                print_stats(stats)
+                print(f"\n🌍 Multi-Region Collection Summary:")
+                print(f"Regions processed: {stats['regions_processed']}")
+                print(f"Total feeds processed: {stats['feeds_processed']}")
+                print(f"Total articles fetched: {stats['total_fetched']}")
+                print(f"Total articles added: {stats['total_added']}")
+                print(f"Total AI-relevant added: {stats['ai_relevant_added']}")
             else:
-                # Original behavior - collect from all feeds
-                print("Starting news collection...")
+                # Original behavior - collect from all regions
                 collector = SimpleCollector(database)
-                stats = collector.collect_all_feeds(config.feeds)
-                print_stats(stats)
+                total_stats = {"feeds_processed": 0, "total_fetched": 0, "total_added": 0, "ai_relevant_added": 0}
+                
+                for region_code, region_config in config.regions.items():
+                    if region_config.enabled:
+                        region_stats = collector.collect_region(config, region_code)
+                        total_stats["feeds_processed"] += region_stats["feeds_processed"]
+                        total_stats["total_fetched"] += region_stats["total_fetched"]
+                        total_stats["total_added"] += region_stats["total_added"]
+                        total_stats["ai_relevant_added"] += region_stats["ai_relevant_added"]
+                
+                print_stats(total_stats)
             
         elif args.command == 'list':
             articles = database.get_articles(limit=args.limit, ai_only=args.ai_only, region=getattr(args, 'region', None))

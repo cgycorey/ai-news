@@ -3,12 +3,12 @@
 import urllib.request
 import urllib.parse
 from datetime import datetime
-from typing import List
+from typing import List, Dict, Any
 import time
 import re
 import html
 
-from .config import FeedConfig
+from .config import FeedConfig, Config, RegionConfig
 from .database import Article, Database
 from .security_utils import (
     parse_xml_safe, clean_text_content, validate_url, safe_urlopen
@@ -293,3 +293,88 @@ class SimpleCollector:
             time.sleep(1)
         
         return stats
+
+    def collect_region(self, config: Config, region: str) -> Dict[str, Any]:
+        """Collect news from specific region only."""
+        if region not in config.regions:
+            print(f"❌ Unknown region: {region}")
+            return {"feeds_processed": 0, "total_fetched": 0, "total_added": 0}
+        
+        region_config = config.regions[region]
+        if not region_config.enabled:
+            print(f"⚠️  Region {region} is disabled")
+            return {"feeds_processed": 0, "total_fetched": 0, "total_added": 0}
+        
+        print(f"🌍 Collecting news from {region_config.name} ({region.upper()})...")
+        
+        stats = {
+            "feeds_processed": 0,
+            "total_fetched": 0,
+            "total_added": 0,
+            "ai_relevant_added": 0
+        }
+        
+        for feed in region_config.feeds:
+            if not feed.enabled:
+                continue
+                
+            print(f"  📡 Processing {feed.name}...")
+            feed_stats = self._process_feed(feed, region)
+            
+            stats["feeds_processed"] += 1
+            stats["total_fetched"] += feed_stats["fetched"]
+            stats["total_added"] += feed_stats["added"]
+            stats["ai_relevant_added"] += feed_stats["ai_relevant"]
+        
+        print(f"✅ {region_config.name} collection complete:")
+        print(f"   Feeds processed: {stats['feeds_processed']}")
+        print(f"   Articles fetched: {stats['total_fetched']}")
+        print(f"   Articles added: {stats['total_added']}")
+        print(f"   AI-relevant added: {stats['ai_relevant_added']}")
+        
+        return stats
+
+    def collect_multiple_regions(self, config: Config, regions: List[str]) -> Dict[str, Any]:
+        """Collect news from multiple regions."""
+        total_stats: Dict[str, Any] = {
+            "regions_processed": 0,
+            "feeds_processed": 0,
+            "total_fetched": 0,
+            "total_added": 0,
+            "ai_relevant_added": 0,
+            "region_stats": {}
+        }
+        
+        for region in regions:
+            if region in config.regions and config.regions[region].enabled:
+                region_stats = self.collect_region(config, region)
+                total_stats["regions_processed"] = total_stats["regions_processed"] + 1
+                total_stats["feeds_processed"] = total_stats["feeds_processed"] + region_stats["feeds_processed"]
+                total_stats["total_fetched"] = total_stats["total_fetched"] + region_stats["total_fetched"]
+                total_stats["total_added"] = total_stats["total_added"] + region_stats["total_added"]
+                total_stats["ai_relevant_added"] = total_stats["ai_relevant_added"] + region_stats["ai_relevant_added"]
+                total_stats["region_stats"][region] = region_stats
+        
+        return total_stats
+
+    def _process_feed(self, feed: FeedConfig, region: str = "global") -> Dict[str, Any]:
+        """Process a single feed and save articles."""
+        try:
+            articles = self.fetch_feed(feed)
+            
+            stats = {"fetched": len(articles), "added": 0, "ai_relevant": 0}
+            
+            for article in articles:
+                # Update article with region
+                article.region = region
+                
+                if self.database.add_article(article):
+                    stats["added"] += 1
+                    if article.ai_relevant:
+                        stats["ai_relevant"] += 1
+            
+            return stats
+            
+        except Exception as e:
+            print(f"❌ Error processing {feed.name}: {e}")
+            return {"fetched": 0, "added": 0, "ai_relevant": 0}
