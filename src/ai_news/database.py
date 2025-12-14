@@ -1,9 +1,10 @@
 """Database models for AI News."""
 
 import sqlite3
+import shutil
 from dataclasses import dataclass
-from datetime import datetime
-from typing import Optional, List
+from datetime import datetime, timedelta
+from typing import Optional, List, Dict, Any
 from pathlib import Path
 
 
@@ -21,6 +22,47 @@ class Article:
     category: str = ""
     ai_relevant: bool = False
     ai_keywords_found: Optional[List[str]] = None
+
+
+@dataclass
+class Entity:
+    """Represents an entity (company, product, technology, person)."""
+    id: Optional[int] = None
+    name: str = ""
+    entity_type: str = ""  # company, product, technology, person
+    description: Optional[str] = None
+    aliases: Optional[List[str]] = None  # Alternative names/spellings
+    metadata: Optional[Dict[str, Any]] = None  # Additional structured data
+    confidence_score: float = 0.0
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+@dataclass
+class Topic:
+    """Represents a trending topic or theme."""
+    id: Optional[int] = None
+    name: str = ""
+    description: Optional[str] = None
+    keywords: Optional[List[str]] = None
+    topic_cluster_id: Optional[int] = None  # For hierarchical topics
+    weight: float = 0.0  # Importance/trending score
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+@dataclass
+class EntityMention:
+    """Represents a mention of an entity in an article."""
+    id: Optional[int] = None
+    article_id: int = 0
+    entity_id: int = 0
+    mention_count: int = 1
+    sentiment_score: Optional[float] = None  # -1.0 to 1.0
+    context_snippets: Optional[List[str]] = None  # Text snippets around mentions
+    confidence_score: float = 0.0
+    mention_positions: Optional[List[int]] = None  # Character positions in article
+    created_at: Optional[datetime] = None
 
 
 class Database:
@@ -162,4 +204,253 @@ class Database:
                 "ai_relevant_articles": ai_relevant,
                 "sources_count": sources,
                 "ai_relevance_rate": f"{(ai_relevant/total*100):.1f}%" if total > 0 else "0%"
+            }
+    
+    def cleanup_old_articles(self, days: int = 90, dry_run: bool = False) -> dict:
+        """Remove articles older than specified number of days.
+        
+        Args:
+            days: Remove articles older than this many days
+            dry_run: If True, only report what would be deleted without actually deleting
+            
+        Returns:
+            Dict with cleanup statistics
+        """
+        cutoff_date = datetime.now() - timedelta(days=days)
+        
+        with sqlite3.connect(self.db_path) as conn:
+            # Count articles that would be deleted
+            count_result = conn.execute("""
+                SELECT COUNT(*) FROM articles 
+                WHERE published_at < ? AND published_at IS NOT NULL
+            """, (cutoff_date.isoformat(),)).fetchone()
+            
+            articles_to_delete = count_result[0] if count_result else 0
+            
+            # Get detailed stats for reporting
+            stats_query = """
+                SELECT 
+                    COUNT(*) as total,
+                    COUNT(CASE WHEN ai_relevant = 1 THEN 1 END) as ai_relevant,
+                    COUNT(DISTINCT source_name) as sources
+                FROM articles 
+                WHERE published_at < ? AND published_at IS NOT NULL
+            """
+            
+            stats = conn.execute(stats_query, (cutoff_date.isoformat(),)).fetchone()
+            
+            result = {
+                "articles_to_delete": articles_to_delete,
+                "ai_relevant_to_delete": stats[1] if stats else 0,
+                "sources_affected": stats[2] if stats else 0,
+                "dry_run": dry_run
+            }
+            
+            if not dry_run and articles_to_delete > 0:
+                # Actually delete the articles
+                conn.execute("""
+                    DELETE FROM articles 
+                    WHERE published_at < ? AND published_at IS NOT NULL
+                """, (cutoff_date.isoformat(),))
+                
+                result["articles_deleted"] = conn.total_changes
+                
+            return result
+    
+    def remove_duplicate_articles(self, dry_run: bool = False) -> dict:
+        """Find and remove duplicate articles based on URL similarity.
+        
+        Args:
+            dry_run: If True, only report what would be deleted without actually deleting
+            
+        Returns:
+            Dict with cleanup statistics
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            # Find duplicates by exact URL match
+            duplicate_query = """
+                SELECT url, COUNT(*) as count, GROUP_CONCAT(id) as ids
+                FROM articles 
+                WHERE url != ''
+                GROUP BY url 
+                HAVING COUNT(*) > 1
+            """
+            
+            duplicates = conn.execute(duplicate_query).fetchall()
+            
+            total_duplicates = 0
+            articles_to_delete = []
+            
+            for url, count, ids in duplicates:
+                article_ids = [int(id_str) for id_str in ids.split(',')]
+                # Keep the oldest one, delete the rest
+                keep_id = min(article_ids)
+                delete_ids = [aid for aid in article_ids if aid != keep_id]
+                articles_to_delete.extend(delete_ids)
+                total_duplicates += count - 1
+            
+            result = {
+                "duplicate_groups": len(duplicates),
+                "articles_to_delete": len(articles_to_delete),
+                "dry_run": dry_run
+            }
+            
+            if not dry_run and articles_to_delete:
+                # Delete duplicates (keep oldest)
+                placeholders = ','.join('?' * len(articles_to_delete))
+                conn.execute(f"""
+                    DELETE FROM articles 
+                    WHERE id IN ({placeholders})
+                """, articles_to_delete)
+                
+                result["articles_deleted"] = conn.total_changes
+                
+            return result
+    
+    def remove_empty_articles(self, dry_run: bool = False) -> dict:
+        """Remove articles with empty titles or content.
+        
+        Args:
+            dry_run: If True, only report what would be deleted without actually deleting
+            
+        Returns:
+            Dict with cleanup statistics
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            # Find articles with empty or whitespace-only titles/summaries
+            empty_query = """
+                SELECT COUNT(*) FROM articles 
+                WHERE (title IS NULL OR title = '' OR TRIM(title) = '')
+                OR (summary IS NULL OR summary = '' OR TRIM(summary) = '')
+            """
+            
+            count_result = conn.execute(empty_query).fetchone()
+            articles_to_delete = count_result[0] if count_result else 0
+            
+            result = {
+                "articles_to_delete": articles_to_delete,
+                "dry_run": dry_run
+            }
+            
+            if not dry_run and articles_to_delete > 0:
+                conn.execute("""
+                    DELETE FROM articles 
+                    WHERE (title IS NULL OR title = '' OR TRIM(title) = '')
+                    OR (summary IS NULL OR summary = '' OR TRIM(summary) = '')
+                """)
+                
+                result["articles_deleted"] = conn.total_changes
+                
+            return result
+    
+    def optimize_database(self) -> dict:
+        """Optimize database performance by vacuuming and analyzing.
+        
+        Returns:
+            Dict with optimization results
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            # Get database size before optimization
+            size_before = self.db_path.stat().st_size
+            
+            # VACUUM to reclaim space and defragment
+            conn.execute("VACUUM")
+            
+            # ANALYZE to update query planner statistics
+            conn.execute("ANALYZE")
+            
+            # Get database size after optimization
+            size_after = self.db_path.stat().st_size
+            space_saved = size_before - size_after
+            
+            return {
+                "vacuum_completed": True,
+                "analyze_completed": True,
+                "size_before_mb": round(size_before / (1024 * 1024), 2),
+                "size_after_mb": round(size_after / (1024 * 1024), 2),
+                "space_saved_mb": round(space_saved / (1024 * 1024), 2),
+                "space_saved_percent": round((space_saved / size_before * 100), 2) if size_before > 0 else 0
+            }
+    
+    def backup_database(self, backup_path: Optional[str] = None) -> dict:
+        """Create a backup of the database.
+        
+        Args:
+            backup_path: Path for backup file, if None uses timestamp
+            
+        Returns:
+            Dict with backup results
+        """
+        if backup_path is None:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_path = f"backup_ai_news_{timestamp}.db"
+        
+        backup_path = Path(backup_path)
+        
+        try:
+            # Copy database file
+            shutil.copy2(self.db_path, backup_path)
+            
+            size = backup_path.stat().st_size
+            
+            return {
+                "backup_path": str(backup_path),
+                "size_mb": round(size / (1024 * 1024), 2),
+                "success": True
+            }
+            
+        except Exception as e:
+            return {
+                "backup_path": str(backup_path),
+                "success": False,
+                "error": str(e)
+            }
+    
+    def get_cleanup_preview(self) -> dict:
+        """Get a preview of what cleanup operations would affect.
+        
+        Returns:
+            Dict with cleanup preview statistics
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            # Get basic stats
+            total_articles = conn.execute("SELECT COUNT(*) FROM articles").fetchone()[0]
+            
+            # Old articles (older than 90 days)
+            cutoff_90 = datetime.now() - timedelta(days=90)
+            old_90_days = conn.execute("""
+                SELECT COUNT(*) FROM articles 
+                WHERE published_at < ? AND published_at IS NOT NULL
+            """, (cutoff_90.isoformat(),)).fetchone()[0]
+            
+            # Old articles (older than 180 days)
+            cutoff_180 = datetime.now() - timedelta(days=180)
+            old_180_days = conn.execute("""
+                SELECT COUNT(*) FROM articles 
+                WHERE published_at < ? AND published_at IS NOT NULL
+            """, (cutoff_180.isoformat(),)).fetchone()[0]
+            
+            # Duplicates
+            duplicates = conn.execute("""
+                SELECT COUNT(*) - COUNT(DISTINCT url) FROM articles 
+                WHERE url != ''
+            """).fetchone()[0]
+            
+            # Empty articles
+            empty_articles = conn.execute("""
+                SELECT COUNT(*) FROM articles 
+                WHERE (title IS NULL OR title = '' OR TRIM(title) = '')
+                OR (summary IS NULL OR summary = '' OR TRIM(summary) = '')
+            """).fetchone()[0]
+            
+            # Database size
+            db_size = self.db_path.stat().st_size
+            
+            return {
+                "total_articles": total_articles,
+                "articles_older_90_days": old_90_days,
+                "articles_older_180_days": old_180_days,
+                "duplicate_articles": duplicates,
+                "empty_articles": empty_articles,
+                "database_size_mb": round(db_size / (1024 * 1024), 2)
             }

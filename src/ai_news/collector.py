@@ -2,7 +2,6 @@
 
 import urllib.request
 import urllib.parse
-import xml.etree.ElementTree as ET
 from datetime import datetime
 from typing import List
 import time
@@ -11,6 +10,9 @@ import html
 
 from .config import FeedConfig
 from .database import Article, Database
+from .security_utils import (
+    parse_xml_safe, clean_text_content, validate_url, safe_urlopen
+)
 
 
 class SimpleCollector:
@@ -23,20 +25,8 @@ class SimpleCollector:
         }
     
     def clean_html(self, html_content: str) -> str:
-        """Remove HTML tags using simple regex."""
-        if not html_content:
-            return ""
-        
-        # Unescape HTML entities
-        content = html.unescape(html_content)
-        
-        # Remove HTML tags
-        content = re.sub(r'<[^>]+>', ' ', content)
-        
-        # Clean up whitespace
-        content = re.sub(r'\s+', ' ', content).strip()
-        
-        return content
+        """Remove HTML tags using secure sanitization."""
+        return clean_text_content(html_content)
     
     def is_ai_relevant(self, title: str, content: str, keywords: List[str]) -> tuple[bool, List[str]]:
         """Check if content is AI-related based on keywords."""
@@ -73,22 +63,32 @@ class SimpleCollector:
         
         return truncated + "..."
     
-    def fetch_rss_feed(self, url: str) -> ET.Element | None:
-        """Fetch and parse RSS feed."""
+    def fetch_rss_feed(self, url: str):
+        """Fetch and parse RSS feed securely."""
         try:
-            req = urllib.request.Request(url, headers=self.headers)
-            with urllib.request.urlopen(req, timeout=30) as response:
+            # Validate URL first
+            is_valid, error = validate_url(url)
+            if not is_valid:
+                print(f"URL validation failed for {url}: {error}")
+                return None
+            
+            # Use safe URL opener
+            response = safe_urlopen(url, headers=self.headers, timeout=30)
+            if response is None:
+                return None
+            
+            with response:
                 content = response.read()
             
-            # Parse XML
-            root = ET.fromstring(content)
+            # Parse XML securely
+            root = parse_xml_safe(content.decode('utf-8', errors='ignore'))
             return root
             
         except Exception as e:
             print(f"Error fetching RSS feed from {url}: {e}")
             return None
     
-    def parse_rss_item(self, item: ET.Element) -> dict:
+    def parse_rss_item(self, item) -> dict:
         """Parse a single RSS item."""
         data = {}
         
@@ -102,10 +102,15 @@ class SimpleCollector:
             data['link'] = link.text or ""
         
         # Try different content fields
-        content = item.find('content:encoded', {'content': 'http://purl.org/rss/1.0/modules/content/'})
-        if content is None:
-            content = item.find('description')
-        if content is not None:
+        # Handle namespace for content:encoded
+        content = None
+        if hasattr(item, 'find'):
+            # Try content:encoded with namespace
+            content = item.find('.//{http://purl.org/rss/1.0/modules/content/}encoded')
+            if content is None:
+                content = item.find('description')
+        
+        if content is not None and hasattr(content, 'text'):
             data['content'] = content.text or ""
         
         # Author
@@ -158,6 +163,9 @@ class SimpleCollector:
         
         # Find items (handle both RSS and Atom formats)
         items = []
+        
+        if root is None:
+            return articles
         
         # RSS format
         channel = root.find('channel')
@@ -214,7 +222,7 @@ class SimpleCollector:
         print(f"  Found {len(articles)} articles")
         return articles
     
-    def parse_atom_entry(self, entry: ET.Element) -> dict:
+    def parse_atom_entry(self, entry) -> dict:
         """Parse an Atom entry."""
         data = {}
         

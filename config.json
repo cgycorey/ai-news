@@ -123,21 +123,6 @@
       ]
     },
     {
-      "name": "Reuters AI News",
-      "url": "https://www.reuters.com/archis/rss/ai-automation-intelligence",
-      "category": "tech",
-      "enabled": true,
-      "ai_keywords": [
-        "artificial intelligence",
-        "AI",
-        "machine learning",
-        "automation",
-        "algorithms",
-        "deep learning",
-        "neural networks"
-      ]
-    },
-    {
       "name": "Bloomberg Technology",
       "url": "https://feeds.bloomberg.com/technology/news.rss",
       "category": "tech",
@@ -150,21 +135,6 @@
         "automation",
         "software",
         "algorithms"
-      ]
-    },
-    {
-      "name": "CNBC Technology",
-      "url": "https://www.cnbc.com/id/19832330/device/rss/rss.html",
-      "category": "tech",
-      "enabled": true,
-      "ai_keywords": [
-        "artificial intelligence",
-        "AI",
-        "machine learning",
-        "tech",
-        "automation",
-        "software",
-        "startups"
       ]
     },
     {
@@ -183,7 +153,7 @@
     },
     {
       "name": "The Verge - AI",
-      "url": "https://www.theverge.com/ai-artificial-intelligence/rss.xml",
+      "url": "https://www.theverge.com/rss/index.xml",
       "category": "tech",
       "enabled": true,
       "ai_keywords": [
@@ -228,37 +198,6 @@
       ]
     },
     {
-      "name": "FinTech Futures",
-      "url": "https://www.finextra.com/press-releases/rss",
-      "category": "finance",
-      "enabled": true,
-      "ai_keywords": [
-        "artificial intelligence",
-        "AI",
-        "machine learning",
-        "fintech",
-        "banking",
-        "insurance",
-        "automation",
-        "algorithms"
-      ]
-    },
-    {
-      "name": "American Banker",
-      "url": "https://www.americanbanker.com/rss/news",
-      "category": "finance",
-      "enabled": true,
-      "ai_keywords": [
-        "artificial intelligence",
-        "AI",
-        "machine learning",
-        "fintech",
-        "banking",
-        "automation",
-        "algorithms"
-      ]
-    },
-    {
       "name": "Insurance Journal",
       "url": "https://www.insurancejournal.com/feed/",
       "category": "insurance",
@@ -281,9 +220,9 @@
     },
     {
       "name": "Insurance Business America",
-      "url": "https://www.insurancebusinessmag.com/us/feed/",
+      "url": "https://www.insurancejournal.com/feed/",
       "category": "insurance",
-      "enabled": true,
+      "enabled": false,
       "ai_keywords": [
         "artificial intelligence",
         "AI",
@@ -315,7 +254,7 @@
       "name": "The Verge",
       "url": "https://www.theverge.com/rss/index.xml",
       "category": "tech",
-      "enabled": true,
+      "enabled": false,
       "ai_keywords": [
         "artificial intelligence",
         "AI",
@@ -357,7 +296,7 @@
     },
     {
       "name": "VentureBeat AI",
-      "url": "https://venturebeat.com/ai/feed/",
+      "url": "https://venturebeat.com/feed/",
       "category": "tech",
       "enabled": true,
       "ai_keywords": [
@@ -373,7 +312,7 @@
     },
     {
       "name": "The Register - AI",
-      "url": "https://www.theregister.com/artificial_intelligence/headlines.atom",
+      "url": "https://www.theregister.com/headlines.atom",
       "category": "tech",
       "enabled": true,
       "ai_keywords": [
@@ -444,23 +383,8 @@
       ]
     },
     {
-      "name": "Anthropic Blog",
-      "url": "https://www.anthropic.com/news/rss",
-      "category": "research",
-      "enabled": true,
-      "ai_keywords": [
-        "artificial intelligence",
-        "AI",
-        "machine learning",
-        "Claude",
-        "LLM",
-        "research",
-        "safety"
-      ]
-    },
-    {
       "name": "Google AI Blog",
-      "url": "https://ai.googleblog.com/feeds/posts/default",
+      "url": "https://blog.google/technology/ai/rss/",
       "category": "research",
       "enabled": true,
       "ai_keywords": [
@@ -487,8 +411,91 @@
         "Azure",
         "enterprise"
       ]
+    },
+    {
+      "name": "American Banker",
+      "url": "https://www.americanbanker.com/rss/",
+      "category": "finance",
+      "enabled": true,
+      "ai_keywords": [
+        "artificial intelligence",
+        "AI",
+        "machine learning",
+        "fintech",
+        "banking",
+        "automation",
+        "algorithms"
+      ]
+    },
+    {
+      "name": "Nature AI",
+      "url": "https://www.nature.com/nmach/articles?type=news&format=rss",
+      "category": "research",
+      "enabled": true,
+      "ai_keywords": [
+        "artificial intelligence",
+        "AI",
+        "machine learning",
+        "deep learning",
+        "neural networks",
+        "research",
+        "Nature"
+      ]
+    },
+    {
+      "name": "ScienceDaily AI",
+      "url": "https://www.sciencedaily.com/rss/computers_math/artificial_intelligence.xml",
+      "category": "research",
+      "enabled": true,
+      "ai_keywords": [
+        "artificial intelligence",
+        "AI",
+        "machine learning",
+        "deep learning",
+        "neural networks",
+        "research",
+        "computer science"
+      ]
+    },
+    {
+      "name": "IEEE Spectrum AI",
+      "url": "https://spectrum.ieee.org/rss/artificial-intelligence",
+      "category": "research",
+      "enabled": true,
+      "ai_keywords": [
+        "artificial intelligence",
+        "AI",
+        "machine learning",
+        "deep learning",
+        "neural networks",
+        "research",
+        "IEEE",
+        "engineering"
+      ]
+    },
+    {
+      "name": "Tech.eu AI",
+      "url": "https://tech.eu/category/artificial-intelligence/feed/",
+      "category": "tech",
+      "enabled": true,
+      "ai_keywords": [
+        "artificial intelligence",
+        "AI",
+        "machine learning",
+        "LLM",
+        "ChatGPT",
+        "OpenAI",
+        "startups",
+        "europe"
+      ]
     }
   ],
   "max_articles_per_feed": 50,
-  "collection_interval_hours": 6
+  "collection_interval_hours": 6,
+  "schedule": {
+    "enabled": false,
+    "interval": "daily",
+    "last_collection": null,
+    "next_collection": null
+  }
 }

@@ -11,6 +11,9 @@ import time
 
 from .config import FeedConfig
 from .database import Article, Database
+from .security_utils import (
+    parse_xml_safe, clean_text_content, validate_url, safe_urlopen
+)
 
 
 class SearchEngineCollector:
@@ -28,8 +31,18 @@ class SearchEngineCollector:
             # DuckDuckGo instant answer API (HTML format)
             url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote_plus(query)}"
             
-            req = urllib.request.Request(url, headers=self.headers)
-            with urllib.request.urlopen(req, timeout=30) as response:
+            # Validate URL
+            is_valid, error = validate_url(url)
+            if not is_valid:
+                print(f"DuckDuckGo URL validation failed: {error}")
+                return []
+            
+            # Use safe URL opener
+            response = safe_urlopen(url, headers=self.headers, timeout=30)
+            if response is None:
+                return []
+            
+            with response:
                 html_content = response.read().decode('utf-8', errors='ignore')
             
             # Parse results from HTML
@@ -41,8 +54,8 @@ class SearchEngineCollector:
             
             for i, (url, title, snippet) in enumerate(matches[:max_results]):
                 # Clean up HTML entities and text
-                title = html.unescape(re.sub(r'<[^>]+>', '', title)).strip()
-                snippet = html.unescape(re.sub(r'<[^>]+>', '', snippet)).strip()
+                title = clean_text_content(title)
+                snippet = clean_text_content(snippet)
                 
                 # Clean URL
                 url = html.unescape(url).strip()
@@ -70,13 +83,22 @@ class SearchEngineCollector:
         try:
             url = f"https://www.bing.com/news/search?q={urllib.parse.quote_plus(query)}&format=rss"
             
-            req = urllib.request.Request(url, headers=self.headers)
-            with urllib.request.urlopen(req, timeout=30) as response:
+            # Validate URL
+            is_valid, error = validate_url(url)
+            if not is_valid:
+                print(f"Bing News URL validation failed: {error}")
+                return []
+            
+            # Use safe URL opener
+            response = safe_urlopen(url, headers=self.headers, timeout=30)
+            if response is None:
+                return []
+            
+            with response:
                 content = response.read().decode('utf-8', errors='ignore')
             
-            # Parse RSS from search results
-            import xml.etree.ElementTree as ET
-            root = ET.fromstring(content)
+            # Parse RSS securely from search results
+            root = parse_xml_safe(content)
             
             results = []
             
@@ -93,8 +115,7 @@ class SearchEngineCollector:
                     # Clean description
                     if desc_elem is not None:
                         content = desc_elem.text or ""
-                        content = re.sub(r'<[^>]+>', ' ', content)
-                        content = html.unescape(content.strip())
+                        content = clean_text_content(content)
                     else:
                         content = ""
                     
@@ -117,14 +138,8 @@ class SearchEngineCollector:
         if not content:
             return ""
         
-        # Remove HTML tags
-        content = re.sub(r'<[^>]+>', ' ', content)
-        
-        # Unescape HTML entities
-        content = html.unescape(content)
-        
-        # Clean up whitespace
-        content = re.sub(r'\s+', ' ', content).strip()
+        # Use secure HTML sanitization
+        content = clean_text_content(content)
         
         # Limit length
         if len(content) > 1000:
