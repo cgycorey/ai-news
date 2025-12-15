@@ -188,25 +188,58 @@ class Database:
             print(f"Error adding article: {e}")
             return False
     
+    def get_article_count(self) -> int:
+        """Get the total number of articles in the database."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                result = conn.execute("SELECT COUNT(*) FROM articles").fetchone()
+                return result[0] if result else 0
+        except sqlite3.Error as e:
+            print(f"Error getting article count: {e}")
+            return 0
+
+
     def get_articles(self, limit: int = 20, ai_only: bool = False, region: Optional[str] = None) -> List[Article]:
-        """Get articles from database with optional region filtering."""
+        """Get articles from database with optional region filtering and fallback."""
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             
+            # Base query
             query = "SELECT * FROM articles WHERE 1=1"
             params = []
             
             if ai_only:
                 query += " AND ai_relevant = 1"
             
+            # Regional filtering with fallback mechanism
             if region:
-                query += " AND region = ?"
-                params.append(region.lower())
-            
-            query += " ORDER BY published_at DESC LIMIT ?"
-            params.append(limit)
-            
-            rows = conn.execute(query, params).fetchall()
+                region = region.lower()
+                if region in ['us', 'eu', 'uk', 'apac']:
+                    # Try specific region first, then fallback to global if no results
+                    region_query = query + f" AND region = ? ORDER BY published_at DESC LIMIT ?"
+                    region_params = params + [region, limit]
+                    
+                    region_rows = conn.execute(region_query, region_params).fetchall()
+                    
+                    # If no results for specific region, fallback to global
+                    if not region_rows:
+                        fallback_query = query + " AND region = 'global' ORDER BY published_at DESC LIMIT ?"
+                        fallback_params = params + [limit]
+                        rows = conn.execute(fallback_query, fallback_params).fetchall()
+                    else:
+                        rows = region_rows
+                else:
+                    # For 'global' or other regions, use exact match
+                    query += " AND region = ?"
+                    params.append(region)
+                    query += " ORDER BY published_at DESC LIMIT ?"
+                    params.append(limit)
+                    rows = conn.execute(query, params).fetchall()
+            else:
+                # No region filter
+                query += " ORDER BY published_at DESC LIMIT ?"
+                params.append(limit)
+                rows = conn.execute(query, params).fetchall()
             
             return [
                 Article(
@@ -227,25 +260,63 @@ class Database:
             ]
     
     def search_articles(self, query: str, limit: int = 20, region: Optional[str] = None) -> List[Article]:
-        """Search articles with optional region filtering."""
+        """Search articles with optional region filtering and fallback."""
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             
             search_query = f"%{query}%"
-            sql = """
-                SELECT * FROM articles 
-                WHERE (title LIKE ? OR content LIKE ? OR summary LIKE ?)
-            """
-            params = [search_query, search_query, search_query]
             
+            # Regional filtering with fallback mechanism
             if region:
-                sql += " AND region = ?"
-                params.append(region.lower())
-            
-            sql += " ORDER BY published_at DESC LIMIT ?"
-            params.append(limit)
-            
-            rows = conn.execute(sql, params).fetchall()
+                region = region.lower()
+                if region in ['us', 'eu', 'uk', 'apac']:
+                    # Try specific region first
+                    region_sql = """
+                        SELECT * FROM articles 
+                        WHERE (title LIKE ? OR content LIKE ? OR summary LIKE ?)
+                        AND region = ?
+                        ORDER BY published_at DESC LIMIT ?
+                    """
+                    region_params = [search_query, search_query, search_query, region, limit]
+                    
+                    region_rows = conn.execute(region_sql, region_params).fetchall()
+                    
+                    # If no results for specific region, fallback to global
+                    if not region_rows:
+                        fallback_sql = """
+                            SELECT * FROM articles 
+                            WHERE (title LIKE ? OR content LIKE ? OR summary LIKE ?)
+                            AND region = 'global'
+                            ORDER BY published_at DESC LIMIT ?
+                        """
+                        fallback_params = [search_query, search_query, search_query, limit]
+                        rows = conn.execute(fallback_sql, fallback_params).fetchall()
+                    else:
+                        rows = region_rows
+                else:
+                    # For 'global' or other regions, use exact match
+                    sql = """
+                        SELECT * FROM articles 
+                        WHERE (title LIKE ? OR content LIKE ? OR summary LIKE ?)
+                    """
+                    params = [search_query, search_query, search_query]
+                    
+                    if region:
+                        sql += " AND region = ?"
+                        params.append(region.lower())
+                    
+                    sql += " ORDER BY published_at DESC LIMIT ?"
+                    params.append(limit)
+                    rows = conn.execute(sql, params).fetchall()
+            else:
+                # No region filter
+                sql = """
+                    SELECT * FROM articles 
+                    WHERE (title LIKE ? OR content LIKE ? OR summary LIKE ?)
+                    ORDER BY published_at DESC LIMIT ?
+                """
+                params = [search_query, search_query, search_query, limit]
+                rows = conn.execute(sql, params).fetchall()
             
             return [
                 Article(

@@ -1,5 +1,1244 @@
 {
   "database_path": "ai_news.db",
+  "regions": {
+    "global": {
+      "name": "Global",
+      "feeds": [
+        {
+          "name": "TechCrunch AI",
+          "url": "https://techcrunch.com/category/artificial-intelligence/feed/",
+          "category": "tech",
+          "enabled": true,
+          "ai_keywords": [
+            "artificial intelligence",
+            "machine learning",
+            "deep learning",
+            "neural network",
+            "LLM",
+            "GPT",
+            "ChatGPT",
+            "OpenAI",
+            "Anthropic",
+            "AI",
+            "ML",
+            "AGI",
+            "transformer",
+            "BERT",
+            "NLP",
+            "computer vision"
+          ]
+        },
+        {
+          "name": "MIT Technology Review AI",
+          "url": "https://www.technologyreview.com/topic/artificial-intelligence/feed/",
+          "category": "research",
+          "enabled": true,
+          "ai_keywords": [
+            "artificial intelligence",
+            "machine learning",
+            "deep learning",
+            "neural network",
+            "LLM",
+            "GPT",
+            "ChatGPT",
+            "OpenAI",
+            "Anthropic",
+            "AI",
+            "ML",
+            "AGI",
+            "transformer",
+            "BERT",
+            "NLP",
+            "computer vision"
+          ]
+        },
+        {
+          "name": "Ars Technica AI",
+          "url": "https://arstechnica.com/tag/artificial-intelligence/feed/",
+          "category": "tech",
+          "enabled": true,
+          "ai_keywords": [
+            "artificial intelligence",
+            "machine learning",
+            "deep learning",
+            "neural network",
+            "LLM",
+            "GPT",
+            "ChatGPT",
+            "OpenAI",
+            "Anthropic",
+            "AI",
+            "ML",
+            "AGI",
+            "transformer",
+            "BERT",
+            "NLP",
+            "computer vision"
+          ]
+        },
+        {
+          "name": "Towards Data Science",
+          "url": "https://towardsdatascience.com/feed",
+          "category": "tutorial",
+          "enabled": true,
+          "ai_keywords": [
+            "artificial intelligence",
+            "machine learning",
+            "deep learning",
+            "neural network",
+            "LLM",
+            "GPT",
+            "ChatGPT",
+            "OpenAI",
+            "Anthropic",
+            "AI",
+            "ML",
+            "AGI",
+            "transformer",
+            "BERT",
+            "NLP",
+            "computer vision"
+          ]
+        },
+        {
+          "name": "arXiv Computer Science - Machine Learning",
+          "url": "http://rss.arxiv.org/rss/cs.LG",
+          "category": "research",
+          "enabled": true,
+          "ai_keywords": [
+            "machine learning",
+            "neural network",
+            "deep learning",
+            "algorithm"
+          ]
+        },
+        {
+          "name": "Hacker News",
+          "url": "https://hnrss.org/frontpage",
+          "category": "general",
+          "enabled": true,
+          "ai_keywords": [
+            "AI",
+            "artificial intelligence",
+            "machine learning",
+            "OpenAI",
+            "GPT"
+          ]
+        },
+        {
+          "name": "Bloomberg Technology",
+          "url": "https://feeds.bloomberg.com/technology/news.rss",
+          "category": "tech",
+          "enabled": true,
+          "ai_keywords": [
+            "artificial intelligence",
+            "AI",
+            "machine learning",
+            "fintech",
+            "automation",
+            "software",
+            "algorithms"
+          ]
+        },
+        {
+          "name": "BBC Technology",
+          "url": "https://feeds.bbci.co.uk/news/technology/rss.xml",
+          "category": "tech",
+          "enabled": true,
+          "ai_keywords": [
+            "artificial intelligence",
+            "AI",
+            "machine learning",
+            "technology",
+            "automation",
+            "software"
+          ]
+        },
+        {
+          "name": "The Verge - AI",
+          "url": "https://www.theverge.com/rss/index.xml",
+          "category": "tech",
+          "enabled": true,
+          "ai_keywords": [
+            "artificial intelligence",
+            "AI",
+            "machine learning",
+            "LLM",
+            "ChatGPT",
+            "OpenAI",
+            "Anthropic",
+            "tech"
+          ]
+        },
+        {
+          "name": "Fierce Healthcare",
+          "url": "https://www.fiercehealthcare.com/rss/xml",
+          "category": "healthcare",
+          "enabled": true,
+          "ai_keywords": [
+            "artificial intelligence",
+            "AI",
+            "machine learning",
+            "healthcare",
+            "medical",
+            "digital health",
+            "diagnosis",
+            "treatment"
+          ]
+        },
+        {
+          "name": "MobiHealthNews",
+          "url": "https://www.mobihealthnews.com/rss/feed",
+          "category": "healthcare",
+          "enabled": true,
+          "ai_keywords": [
+            "artificial intelligence",
+            "AI",
+            "machine learning",
+            "healthcare",
+            "digital health",
+            "medical technology"
+          ]
+        },
+        {
+          "name": "Insurance Journal",
+          "url": "https://www.insurancejournal.com/feed/",
+          "category": "insurance",
+          "enabled": true,
+          "ai_keywords": [
+            "artificial intelligence",
+            "AI",
+            "machine learning",
+            "insurtech",
+            "algorithmic",
+            "automation",
+            "predictive analytics",
+            "data science",
+            "deep learning",
+            "neural network",
+            "digital transformation",
+            "claims automation",
+            "underwriting AI"
+          ]
+        },
+        {
+          "name": "Insurance Business America",
+          "url": "https://www.insurancejournal.com/feed/",
+          "category": "insurance",
+          "enabled": false,
+          "ai_keywords": [
+            "artificial intelligence",
+            "AI",
+            "machine learning",
+            "insurtech",
+            "algorithmic",
+            "automation",
+            "predictive analytics",
+            "claims automation",
+            "underwriting AI",
+            "digital insurance"
+          ]
+        },
+        {
+          "name": "Wired",
+          "url": "https://www.wired.com/feed/rss",
+          "category": "tech",
+          "enabled": true,
+          "ai_keywords": [
+            "artificial intelligence",
+            "AI",
+            "machine learning",
+            "technology",
+            "automation",
+            "algorithm"
+          ]
+        },
+        {
+          "name": "The Verge",
+          "url": "https://www.theverge.com/rss/index.xml",
+          "category": "tech",
+          "enabled": false,
+          "ai_keywords": [
+            "artificial intelligence",
+            "AI",
+            "machine learning",
+            "tech",
+            "technology",
+            "automation"
+          ]
+        },
+        {
+          "name": "Fast Company",
+          "url": "https://www.fastcompany.com/rss",
+          "category": "business",
+          "enabled": true,
+          "ai_keywords": [
+            "artificial intelligence",
+            "AI",
+            "machine learning",
+            "business",
+            "innovation",
+            "automation"
+          ]
+        },
+        {
+          "name": "AI News",
+          "url": "https://artificialintelligence-news.com/feed/",
+          "category": "tech",
+          "enabled": true,
+          "ai_keywords": [
+            "artificial intelligence",
+            "AI",
+            "machine learning",
+            "LLM",
+            "ChatGPT",
+            "OpenAI",
+            "Anthropic",
+            "deep learning"
+          ]
+        },
+        {
+          "name": "VentureBeat AI",
+          "url": "https://venturebeat.com/feed/",
+          "category": "tech",
+          "enabled": true,
+          "ai_keywords": [
+            "artificial intelligence",
+            "AI",
+            "machine learning",
+            "LLM",
+            "ChatGPT",
+            "OpenAI",
+            "startups",
+            "venture capital"
+          ]
+        },
+        {
+          "name": "The Register - AI",
+          "url": "https://www.theregister.com/headlines.atom",
+          "category": "tech",
+          "enabled": true,
+          "ai_keywords": [
+            "artificial intelligence",
+            "AI",
+            "machine learning",
+            "LLM",
+            "automation",
+            "enterprise tech"
+          ]
+        },
+        {
+          "name": "InfoWorld",
+          "url": "https://www.infoworld.com/category/artificial-intelligence/rss.xml",
+          "category": "tech",
+          "enabled": true,
+          "ai_keywords": [
+            "artificial intelligence",
+            "AI",
+            "machine learning",
+            "enterprise",
+            "automation",
+            "software"
+          ]
+        },
+        {
+          "name": "KDnuggets",
+          "url": "https://www.kdnuggets.com/feed/",
+          "category": "research",
+          "enabled": true,
+          "ai_keywords": [
+            "artificial intelligence",
+            "AI",
+            "machine learning",
+            "data science",
+            "analytics",
+            "algorithms",
+            "research"
+          ]
+        },
+        {
+          "name": "DeepMind Blog",
+          "url": "https://deepmind.google/blog/feed/",
+          "category": "research",
+          "enabled": true,
+          "ai_keywords": [
+            "artificial intelligence",
+            "AI",
+            "machine learning",
+            "deep learning",
+            "neural networks",
+            "research"
+          ]
+        },
+        {
+          "name": "OpenAI Blog",
+          "url": "https://openai.com/blog/rss.xml",
+          "category": "research",
+          "enabled": true,
+          "ai_keywords": [
+            "artificial intelligence",
+            "AI",
+            "machine learning",
+            "GPT",
+            "LLM",
+            "ChatGPT",
+            "research"
+          ]
+        },
+        {
+          "name": "Google AI Blog",
+          "url": "https://blog.google/technology/ai/rss/",
+          "category": "research",
+          "enabled": true,
+          "ai_keywords": [
+            "artificial intelligence",
+            "AI",
+            "machine learning",
+            "deep learning",
+            "research",
+            "Google",
+            "TensorFlow"
+          ]
+        },
+        {
+          "name": "Microsoft Research",
+          "url": "https://www.microsoft.com/en-us/research/blog/feed/",
+          "category": "research",
+          "enabled": true,
+          "ai_keywords": [
+            "artificial intelligence",
+            "AI",
+            "machine learning",
+            "research",
+            "Microsoft",
+            "Azure",
+            "enterprise"
+          ]
+        },
+        {
+          "name": "American Banker",
+          "url": "https://www.americanbanker.com/rss/",
+          "category": "finance",
+          "enabled": true,
+          "ai_keywords": [
+            "artificial intelligence",
+            "AI",
+            "machine learning",
+            "fintech",
+            "banking",
+            "automation",
+            "algorithms"
+          ]
+        },
+        {
+          "name": "MobiHealthNews",
+          "url": "https://www.mobihealthnews.com/rss/feed",
+          "category": "healthcare",
+          "enabled": true,
+          "ai_keywords": [
+            "artificial intelligence",
+            "AI",
+            "machine learning",
+            "healthcare",
+            "digital health",
+            "medical technology",
+            "health tech",
+            "medical AI",
+            "biotech",
+            "pharmaceutical",
+            "clinical",
+            "hospital",
+            "medicine",
+            "diagnostics",
+            "telemedicine"
+          ]
+        },
+        {
+          "name": "Fierce Healthcare",
+          "url": "https://www.fiercehealthcare.com/rss/xml",
+          "category": "healthcare",
+          "enabled": true,
+          "ai_keywords": [
+            "artificial intelligence",
+            "AI",
+            "machine learning",
+            "healthcare",
+            "medical",
+            "digital health",
+            "diagnosis",
+            "treatment",
+            "health tech",
+            "medical AI",
+            "biotech",
+            "pharmaceutical"
+          ]
+        },
+        {
+          "name": "Healthcare IT News",
+          "url": "https://www.healthcareitnews.com/rss.xml",
+          "category": "healthcare",
+          "enabled": true,
+          "ai_keywords": [
+            "artificial intelligence",
+            "AI",
+            "machine learning",
+            "healthcare",
+            "health it",
+            "medical technology",
+            "digital health",
+            "electronic health records",
+            "telehealth",
+            "health tech"
+          ]
+        },
+        {
+          "name": "Medical Device Network",
+          "url": "https://www.medicaldevice-network.com/rss.xml",
+          "category": "healthcare",
+          "enabled": true,
+          "ai_keywords": [
+            "artificial intelligence",
+            "AI",
+            "machine learning",
+            "medical devices",
+            "healthcare",
+            "medical technology",
+            "digital health",
+            "diagnostics",
+            "biotech"
+          ]
+        },
+        {
+          "name": "FinTech Futures",
+          "url": "https://www.fintechfutures.com/rss/",
+          "category": "fintech",
+          "enabled": true,
+          "ai_keywords": [
+            "artificial intelligence",
+            "AI",
+            "machine learning",
+            "fintech",
+            "financial technology",
+            "banking",
+            "payments",
+            "digital banking",
+            "insurtech",
+            "regtech",
+            "cryptocurrency",
+            "blockchain",
+            "trading",
+            "investment",
+            "wealth management"
+          ]
+        },
+        {
+          "name": "The Paypers",
+          "url": "https://thepayerss.com/rss",
+          "category": "fintech",
+          "enabled": true,
+          "ai_keywords": [
+            "artificial intelligence",
+            "AI",
+            "machine learning",
+            "fintech",
+            "payments",
+            "banking",
+            "financial technology",
+            "digital payments",
+            "mobile payments",
+            "fraud detection"
+          ]
+        },
+        {
+          "name": "Nature AI",
+          "url": "https://www.nature.com/nmach/articles?type=news&format=rss",
+          "category": "research",
+          "enabled": true,
+          "ai_keywords": [
+            "artificial intelligence",
+            "AI",
+            "machine learning",
+            "deep learning",
+            "neural networks",
+            "research",
+            "Nature"
+          ]
+        },
+        {
+          "name": "ScienceDaily AI",
+          "url": "https://www.sciencedaily.com/rss/computers_math/artificial_intelligence.xml",
+          "category": "research",
+          "enabled": true,
+          "ai_keywords": [
+            "artificial intelligence",
+            "AI",
+            "machine learning",
+            "deep learning",
+            "neural networks",
+            "research",
+            "computer science"
+          ]
+        },
+        {
+          "name": "IEEE Spectrum AI",
+          "url": "https://spectrum.ieee.org/rss/artificial-intelligence",
+          "category": "research",
+          "enabled": true,
+          "ai_keywords": [
+            "artificial intelligence",
+            "AI",
+            "machine learning",
+            "deep learning",
+            "neural networks",
+            "research",
+            "IEEE",
+            "engineering"
+          ]
+        },
+        {
+          "name": "Tech.eu AI",
+          "url": "https://tech.eu/category/artificial-intelligence/feed/",
+          "category": "tech",
+          "enabled": true,
+          "ai_keywords": [
+            "artificial intelligence",
+            "AI",
+            "machine learning",
+            "LLM",
+            "ChatGPT",
+            "OpenAI",
+            "startups",
+            "europe"
+          ]
+        },
+        {
+          "name": "Test UK Feed",
+          "url": "https://test-uk.com/rss",
+          "category": "tech",
+          "enabled": true,
+          "ai_keywords": [
+            "AI",
+            "machine learning"
+          ]
+        },
+        {
+          "name": "Test UK Insurance Feed",
+          "url": "https://test-uk-insurance.com/rss",
+          "category": "insurance",
+          "enabled": true,
+          "ai_keywords": [
+            "artificial intelligence",
+            "machine learning",
+            "deep learning",
+            "neural network",
+            "LLM",
+            "GPT",
+            "ChatGPT",
+            "OpenAI",
+            "Anthropic",
+            "AI",
+            "ML",
+            "AGI",
+            "transformer",
+            "BERT",
+            "NLP",
+            "computer vision"
+          ]
+        },
+        {
+          "name": "BBC News UK",
+          "url": "https://feeds.bbci.co.uk/news/rss.xml",
+          "category": "news",
+          "enabled": true,
+          "ai_keywords": [
+            "AI",
+            "artificial intelligence",
+            "technology"
+          ]
+        },
+        {
+          "name": "BBC News UK",
+          "url": "https://feeds.bbci.co.uk/news/rss.xml",
+          "category": "news",
+          "enabled": true,
+          "ai_keywords": [
+            "AI",
+            "artificial intelligence",
+            "technology"
+          ]
+        },
+        {
+          "name": "TechCrunch US",
+          "url": "https://techcrunch.com/feed/",
+          "category": "tech",
+          "enabled": true,
+          "ai_keywords": [
+            "AI",
+            "startups",
+            "technology"
+          ]
+        },
+        {
+          "name": "BBC News UK",
+          "url": "https://feeds.bbci.co.uk/news/rss.xml",
+          "category": "news",
+          "enabled": true,
+          "ai_keywords": [
+            "AI",
+            "artificial intelligence",
+            "technology"
+          ]
+        },
+        {
+          "name": "UK Insurance News",
+          "url": "https://www.insuranceage.co.uk/rss",
+          "category": "insurance",
+          "enabled": true,
+          "ai_keywords": [
+            "insurance",
+            "insurtech",
+            "insurance technology",
+            "AI",
+            "machine learning"
+          ]
+        },
+        {
+          "name": "TechCrunch US",
+          "url": "https://techcrunch.com/feed/",
+          "category": "tech",
+          "enabled": true,
+          "ai_keywords": [
+            "AI",
+            "startups",
+            "technology"
+          ]
+        },
+        {
+          "name": "BBC News UK",
+          "url": "https://feeds.bbci.co.uk/news/rss.xml",
+          "category": "news",
+          "enabled": true,
+          "ai_keywords": [
+            "AI",
+            "artificial intelligence",
+            "technology"
+          ]
+        },
+        {
+          "name": "UK Insurance News",
+          "url": "https://www.insuranceage.co.uk/rss",
+          "category": "insurance",
+          "enabled": true,
+          "ai_keywords": [
+            "insurance",
+            "insurtech",
+            "insurance technology",
+            "AI",
+            "machine learning"
+          ]
+        },
+        {
+          "name": "London Tech Week",
+          "url": "https://www.techweek.co.uk/rss",
+          "category": "tech",
+          "enabled": true,
+          "ai_keywords": [
+            "London",
+            "UK tech",
+            "startups",
+            "technology",
+            "AI",
+            "artificial intelligence"
+          ]
+        },
+        {
+          "name": "TechCrunch US",
+          "url": "https://techcrunch.com/feed/",
+          "category": "tech",
+          "enabled": true,
+          "ai_keywords": [
+            "AI",
+            "startups",
+            "technology"
+          ]
+        },
+        {
+          "name": "AI Insurance Tech News",
+          "url": "https://www.insurancejournal.com/rss",
+          "category": "insurance",
+          "enabled": true,
+          "ai_keywords": [
+            "AI",
+            "artificial intelligence",
+            "machine learning",
+            "insurtech",
+            "insurance technology",
+            "automation",
+            "digital transformation",
+            "claims processing",
+            "underwriting",
+            "fraud detection"
+          ]
+        },
+        {
+          "name": "BBC News UK",
+          "url": "https://feeds.bbci.co.uk/news/rss.xml",
+          "category": "news",
+          "enabled": true,
+          "ai_keywords": [
+            "AI",
+            "artificial intelligence",
+            "technology"
+          ]
+        },
+        {
+          "name": "UK Insurance News",
+          "url": "https://www.insuranceage.co.uk/rss",
+          "category": "insurance",
+          "enabled": true,
+          "ai_keywords": [
+            "insurance",
+            "insurtech",
+            "insurance technology",
+            "AI",
+            "machine learning"
+          ]
+        },
+        {
+          "name": "London Tech Week",
+          "url": "https://www.techweek.co.uk/rss",
+          "category": "tech",
+          "enabled": true,
+          "ai_keywords": [
+            "London",
+            "UK tech",
+            "startups",
+            "technology",
+            "AI",
+            "artificial intelligence"
+          ]
+        },
+        {
+          "name": "TechCrunch US",
+          "url": "https://techcrunch.com/feed/",
+          "category": "tech",
+          "enabled": true,
+          "ai_keywords": [
+            "AI",
+            "startups",
+            "technology"
+          ]
+        },
+        {
+          "name": "InsurTech Daily",
+          "url": "https://www.itweb.co.za/category/insurtech/rss",
+          "category": "technology",
+          "enabled": true,
+          "ai_keywords": [
+            "insurtech",
+            "insurance technology",
+            "fintech",
+            "AI",
+            "artificial intelligence",
+            "automation",
+            "digital insurance"
+          ]
+        },
+        {
+          "name": "BBC News UK",
+          "url": "https://feeds.bbci.co.uk/news/rss.xml",
+          "category": "news",
+          "enabled": true,
+          "ai_keywords": [
+            "AI",
+            "artificial intelligence",
+            "technology"
+          ]
+        },
+        {
+          "name": "UK Insurance News",
+          "url": "https://www.insuranceage.co.uk/rss",
+          "category": "insurance",
+          "enabled": true,
+          "ai_keywords": [
+            "insurance",
+            "insurtech",
+            "insurance technology",
+            "AI",
+            "machine learning"
+          ]
+        },
+        {
+          "name": "London Tech Week",
+          "url": "https://www.techweek.co.uk/rss",
+          "category": "tech",
+          "enabled": true,
+          "ai_keywords": [
+            "London",
+            "UK tech",
+            "startups",
+            "technology",
+            "AI",
+            "artificial intelligence"
+          ]
+        },
+        {
+          "name": "TechCrunch US",
+          "url": "https://techcrunch.com/feed/",
+          "category": "tech",
+          "enabled": true,
+          "ai_keywords": [
+            "AI",
+            "startups",
+            "technology"
+          ]
+        },
+        {
+          "name": "Insurance Tech Trends",
+          "url": "https://www.insurancenewsnet.com/feed",
+          "category": "insurance",
+          "enabled": true,
+          "ai_keywords": [
+            "insurance technology",
+            "AI",
+            "machine learning",
+            "digital insurance",
+            "insurtech",
+            "innovation",
+            "startup"
+          ]
+        },
+        {
+          "name": "BBC News UK",
+          "url": "https://feeds.bbci.co.uk/news/rss.xml",
+          "category": "news",
+          "enabled": true,
+          "ai_keywords": [
+            "AI",
+            "artificial intelligence",
+            "technology"
+          ]
+        },
+        {
+          "name": "UK Insurance News",
+          "url": "https://www.insuranceage.co.uk/rss",
+          "category": "insurance",
+          "enabled": true,
+          "ai_keywords": [
+            "insurance",
+            "insurtech",
+            "insurance technology",
+            "AI",
+            "machine learning"
+          ]
+        },
+        {
+          "name": "London Tech Week",
+          "url": "https://www.techweek.co.uk/rss",
+          "category": "tech",
+          "enabled": true,
+          "ai_keywords": [
+            "London",
+            "UK tech",
+            "startups",
+            "technology",
+            "AI",
+            "artificial intelligence"
+          ]
+        },
+        {
+          "name": "TechCrunch US",
+          "url": "https://techcrunch.com/feed/",
+          "category": "tech",
+          "enabled": true,
+          "ai_keywords": [
+            "AI",
+            "startups",
+            "technology"
+          ]
+        },
+        {
+          "name": "BBC News UK",
+          "url": "https://feeds.bbci.co.uk/news/rss.xml",
+          "category": "news",
+          "enabled": true,
+          "ai_keywords": [
+            "AI",
+            "artificial intelligence",
+            "technology"
+          ]
+        },
+        {
+          "name": "UK Insurance News",
+          "url": "https://www.insuranceage.co.uk/rss",
+          "category": "insurance",
+          "enabled": true,
+          "ai_keywords": [
+            "insurance",
+            "insurtech",
+            "insurance technology",
+            "AI",
+            "machine learning"
+          ]
+        },
+        {
+          "name": "London Tech Week",
+          "url": "https://www.techweek.co.uk/rss",
+          "category": "tech",
+          "enabled": true,
+          "ai_keywords": [
+            "London",
+            "UK tech",
+            "startups",
+            "technology",
+            "AI",
+            "artificial intelligence"
+          ]
+        },
+        {
+          "name": "TechCrunch US",
+          "url": "https://techcrunch.com/feed/",
+          "category": "tech",
+          "enabled": true,
+          "ai_keywords": [
+            "AI",
+            "startups",
+            "technology"
+          ]
+        },
+        {
+          "name": "US InsurTech Hub",
+          "url": "https://techcrunch.com/category/artificial-intelligence/feed",
+          "category": "tech",
+          "enabled": true,
+          "ai_keywords": [
+            "insurtech",
+            "insurance",
+            "artificial intelligence",
+            "AI",
+            "machine learning",
+            "insurance technology"
+          ]
+        }
+      ],
+      "enabled": true,
+      "collection_priority": 1
+    },
+    "uk": {
+      "name": "Uk",
+      "feeds": [
+        {
+          "name": "BBC News UK",
+          "url": "https://feeds.bbci.co.uk/news/rss.xml",
+          "category": "news",
+          "enabled": true,
+          "ai_keywords": [
+            "AI",
+            "artificial intelligence",
+            "technology"
+          ]
+        },
+        {
+          "name": "UK Insurance News",
+          "url": "https://www.insuranceage.co.uk/rss",
+          "category": "insurance",
+          "enabled": true,
+          "ai_keywords": [
+            "insurance",
+            "insurtech",
+            "insurance technology",
+            "AI",
+            "machine learning"
+          ]
+        },
+        {
+          "name": "London Tech Week",
+          "url": "https://www.techweek.co.uk/rss",
+          "category": "tech",
+          "enabled": true,
+          "ai_keywords": [
+            "London",
+            "UK tech",
+            "startups",
+            "technology",
+            "AI",
+            "artificial intelligence"
+          ]
+        },
+        {
+          "name": "UK Insurance Technology",
+          "url": "https://www.uktech.news/feed",
+          "category": "technology",
+          "enabled": true,
+          "ai_keywords": [
+            "insurance",
+            "insurtech",
+            "AI",
+            "artificial intelligence",
+            "insurance technology",
+            "fintech",
+            "digital"
+          ]
+        }
+      ],
+      "enabled": true,
+      "collection_priority": 1
+    },
+    "us": {
+      "name": "United States",
+      "feeds": [
+        {
+          "name": "TechCrunch US",
+          "url": "https://techcrunch.com/feed/",
+          "category": "tech",
+          "enabled": true,
+          "ai_keywords": [
+            "AI",
+            "startups",
+            "technology",
+            "artificial intelligence",
+            "machine learning"
+          ]
+        },
+        {
+          "name": "US InsurTech Hub",
+          "url": "https://techcrunch.com/category/artificial-intelligence/feed",
+          "category": "tech",
+          "enabled": true,
+          "ai_keywords": [
+            "insurtech",
+            "insurance",
+            "artificial intelligence",
+            "AI",
+            "machine learning",
+            "insurance technology"
+          ]
+        },
+        {
+          "name": "Healthcare IT News US",
+          "url": "https://www.healthcareitnews.com/rss.xml",
+          "category": "healthcare",
+          "enabled": true,
+          "ai_keywords": [
+            "artificial intelligence",
+            "AI",
+            "machine learning",
+            "healthcare",
+            "health it",
+            "medical technology",
+            "digital health",
+            "American healthcare",
+            "US healthcare"
+          ]
+        },
+        {
+          "name": "American Banker",
+          "url": "https://www.americanbanker.com/rss/",
+          "category": "fintech",
+          "enabled": true,
+          "ai_keywords": [
+            "artificial intelligence",
+            "AI",
+            "machine learning",
+            "fintech",
+            "banking",
+            "payments",
+            "American banking",
+            "US finance"
+          ]
+        },
+        {
+          "name": "FDA News",
+          "url": "https://www.fda.gov/about-fda/contact-fda/rss-feeds",
+          "category": "healthcare",
+          "enabled": true,
+          "ai_keywords": [
+            "artificial intelligence",
+            "AI",
+            "machine learning",
+            "healthcare",
+            "FDA",
+            "medical devices",
+            "pharmaceutical",
+            "American medical"
+          ]
+        }
+      ],
+      "enabled": true,
+      "collection_priority": 1
+    },
+    "eu": {
+      "name": "European Union",
+      "feeds": [
+        {
+          "name": "Tech.eu AI",
+          "url": "https://tech.eu/category/artificial-intelligence/feed/",
+          "category": "tech",
+          "enabled": true,
+          "ai_keywords": [
+            "artificial intelligence",
+            "AI",
+            "machine learning",
+            "LLM",
+            "ChatGPT",
+            "OpenAI",
+            "startups",
+            "europe",
+            "European tech"
+          ]
+        },
+        {
+          "name": "EU-Startups",
+          "url": "https://eu-startups.com/feed/",
+          "category": "fintech",
+          "enabled": true,
+          "ai_keywords": [
+            "artificial intelligence",
+            "AI",
+            "machine learning",
+            "fintech",
+            "startups",
+            "European startups",
+            "EU funding"
+          ]
+        },
+        {
+          "name": "Digital Health Europe",
+          "url": "https://www.digitalhealthnews.eu/feed/",
+          "category": "healthcare",
+          "enabled": true,
+          "ai_keywords": [
+            "artificial intelligence",
+            "AI",
+            "machine learning",
+            "healthcare",
+            "digital health",
+            "European healthcare",
+            "EU health"
+          ]
+        },
+        {
+          "name": "FinTech Futures Europe",
+          "url": "https://www.fintechfutures.com/rss/",
+          "category": "fintech",
+          "enabled": true,
+          "ai_keywords": [
+            "artificial intelligence",
+            "AI",
+            "machine learning",
+            "fintech",
+            "European fintech",
+            "EU banking",
+            "European payments"
+          ]
+        }
+      ],
+      "enabled": true,
+      "collection_priority": 1
+    }
+  },
+  "max_articles_per_feed": 50,
+  "collection_interval_hours": 6,
   "feeds": [
     {
       "name": "TechCrunch AI",
@@ -488,13 +1727,498 @@
         "startups",
         "europe"
       ]
+    },
+    {
+      "name": "Test UK Feed",
+      "url": "https://test-uk.com/rss",
+      "category": "tech",
+      "enabled": true,
+      "ai_keywords": [
+        "AI",
+        "machine learning"
+      ]
+    },
+    {
+      "name": "Test UK Insurance Feed",
+      "url": "https://test-uk-insurance.com/rss",
+      "category": "insurance",
+      "enabled": true,
+      "ai_keywords": [
+        "artificial intelligence",
+        "machine learning",
+        "deep learning",
+        "neural network",
+        "LLM",
+        "GPT",
+        "ChatGPT",
+        "OpenAI",
+        "Anthropic",
+        "AI",
+        "ML",
+        "AGI",
+        "transformer",
+        "BERT",
+        "NLP",
+        "computer vision"
+      ]
+    },
+    {
+      "name": "BBC News UK",
+      "url": "https://feeds.bbci.co.uk/news/rss.xml",
+      "category": "news",
+      "enabled": true,
+      "ai_keywords": [
+        "AI",
+        "artificial intelligence",
+        "technology"
+      ]
+    },
+    {
+      "name": "BBC News UK",
+      "url": "https://feeds.bbci.co.uk/news/rss.xml",
+      "category": "news",
+      "enabled": true,
+      "ai_keywords": [
+        "AI",
+        "artificial intelligence",
+        "technology"
+      ]
+    },
+    {
+      "name": "TechCrunch US",
+      "url": "https://techcrunch.com/feed/",
+      "category": "tech",
+      "enabled": true,
+      "ai_keywords": [
+        "AI",
+        "startups",
+        "technology"
+      ]
+    },
+    {
+      "name": "BBC News UK",
+      "url": "https://feeds.bbci.co.uk/news/rss.xml",
+      "category": "news",
+      "enabled": true,
+      "ai_keywords": [
+        "AI",
+        "artificial intelligence",
+        "technology"
+      ]
+    },
+    {
+      "name": "UK Insurance News",
+      "url": "https://www.insuranceage.co.uk/rss",
+      "category": "insurance",
+      "enabled": true,
+      "ai_keywords": [
+        "insurance",
+        "insurtech",
+        "insurance technology",
+        "AI",
+        "machine learning"
+      ]
+    },
+    {
+      "name": "TechCrunch US",
+      "url": "https://techcrunch.com/feed/",
+      "category": "tech",
+      "enabled": true,
+      "ai_keywords": [
+        "AI",
+        "startups",
+        "technology"
+      ]
+    },
+    {
+      "name": "BBC News UK",
+      "url": "https://feeds.bbci.co.uk/news/rss.xml",
+      "category": "news",
+      "enabled": true,
+      "ai_keywords": [
+        "AI",
+        "artificial intelligence",
+        "technology"
+      ]
+    },
+    {
+      "name": "UK Insurance News",
+      "url": "https://www.insuranceage.co.uk/rss",
+      "category": "insurance",
+      "enabled": true,
+      "ai_keywords": [
+        "insurance",
+        "insurtech",
+        "insurance technology",
+        "AI",
+        "machine learning"
+      ]
+    },
+    {
+      "name": "London Tech Week",
+      "url": "https://www.techweek.co.uk/rss",
+      "category": "tech",
+      "enabled": true,
+      "ai_keywords": [
+        "London",
+        "UK tech",
+        "startups",
+        "technology",
+        "AI",
+        "artificial intelligence"
+      ]
+    },
+    {
+      "name": "TechCrunch US",
+      "url": "https://techcrunch.com/feed/",
+      "category": "tech",
+      "enabled": true,
+      "ai_keywords": [
+        "AI",
+        "startups",
+        "technology"
+      ]
+    },
+    {
+      "name": "AI Insurance Tech News",
+      "url": "https://www.insurancejournal.com/rss",
+      "category": "insurance",
+      "enabled": true,
+      "ai_keywords": [
+        "AI",
+        "artificial intelligence",
+        "machine learning",
+        "insurtech",
+        "insurance technology",
+        "automation",
+        "digital transformation",
+        "claims processing",
+        "underwriting",
+        "fraud detection"
+      ]
+    },
+    {
+      "name": "BBC News UK",
+      "url": "https://feeds.bbci.co.uk/news/rss.xml",
+      "category": "news",
+      "enabled": true,
+      "ai_keywords": [
+        "AI",
+        "artificial intelligence",
+        "technology"
+      ]
+    },
+    {
+      "name": "UK Insurance News",
+      "url": "https://www.insuranceage.co.uk/rss",
+      "category": "insurance",
+      "enabled": true,
+      "ai_keywords": [
+        "insurance",
+        "insurtech",
+        "insurance technology",
+        "AI",
+        "machine learning"
+      ]
+    },
+    {
+      "name": "London Tech Week",
+      "url": "https://www.techweek.co.uk/rss",
+      "category": "tech",
+      "enabled": true,
+      "ai_keywords": [
+        "London",
+        "UK tech",
+        "startups",
+        "technology",
+        "AI",
+        "artificial intelligence"
+      ]
+    },
+    {
+      "name": "TechCrunch US",
+      "url": "https://techcrunch.com/feed/",
+      "category": "tech",
+      "enabled": true,
+      "ai_keywords": [
+        "AI",
+        "startups",
+        "technology"
+      ]
+    },
+    {
+      "name": "InsurTech Daily",
+      "url": "https://www.itweb.co.za/category/insurtech/rss",
+      "category": "technology",
+      "enabled": true,
+      "ai_keywords": [
+        "insurtech",
+        "insurance technology",
+        "fintech",
+        "AI",
+        "artificial intelligence",
+        "automation",
+        "digital insurance"
+      ]
+    },
+    {
+      "name": "BBC News UK",
+      "url": "https://feeds.bbci.co.uk/news/rss.xml",
+      "category": "news",
+      "enabled": true,
+      "ai_keywords": [
+        "AI",
+        "artificial intelligence",
+        "technology"
+      ]
+    },
+    {
+      "name": "UK Insurance News",
+      "url": "https://www.insuranceage.co.uk/rss",
+      "category": "insurance",
+      "enabled": true,
+      "ai_keywords": [
+        "insurance",
+        "insurtech",
+        "insurance technology",
+        "AI",
+        "machine learning"
+      ]
+    },
+    {
+      "name": "London Tech Week",
+      "url": "https://www.techweek.co.uk/rss",
+      "category": "tech",
+      "enabled": true,
+      "ai_keywords": [
+        "London",
+        "UK tech",
+        "startups",
+        "technology",
+        "AI",
+        "artificial intelligence"
+      ]
+    },
+    {
+      "name": "TechCrunch US",
+      "url": "https://techcrunch.com/feed/",
+      "category": "tech",
+      "enabled": true,
+      "ai_keywords": [
+        "AI",
+        "startups",
+        "technology"
+      ]
+    },
+    {
+      "name": "Insurance Tech Trends",
+      "url": "https://www.insurancenewsnet.com/feed",
+      "category": "insurance",
+      "enabled": true,
+      "ai_keywords": [
+        "insurance technology",
+        "AI",
+        "machine learning",
+        "digital insurance",
+        "insurtech",
+        "innovation",
+        "startup"
+      ]
+    },
+    {
+      "name": "BBC News UK",
+      "url": "https://feeds.bbci.co.uk/news/rss.xml",
+      "category": "news",
+      "enabled": true,
+      "ai_keywords": [
+        "AI",
+        "artificial intelligence",
+        "technology"
+      ]
+    },
+    {
+      "name": "UK Insurance News",
+      "url": "https://www.insuranceage.co.uk/rss",
+      "category": "insurance",
+      "enabled": true,
+      "ai_keywords": [
+        "insurance",
+        "insurtech",
+        "insurance technology",
+        "AI",
+        "machine learning"
+      ]
+    },
+    {
+      "name": "London Tech Week",
+      "url": "https://www.techweek.co.uk/rss",
+      "category": "tech",
+      "enabled": true,
+      "ai_keywords": [
+        "London",
+        "UK tech",
+        "startups",
+        "technology",
+        "AI",
+        "artificial intelligence"
+      ]
+    },
+    {
+      "name": "TechCrunch US",
+      "url": "https://techcrunch.com/feed/",
+      "category": "tech",
+      "enabled": true,
+      "ai_keywords": [
+        "AI",
+        "startups",
+        "technology"
+      ]
+    },
+    {
+      "name": "BBC News UK",
+      "url": "https://feeds.bbci.co.uk/news/rss.xml",
+      "category": "news",
+      "enabled": true,
+      "ai_keywords": [
+        "AI",
+        "artificial intelligence",
+        "technology"
+      ]
+    },
+    {
+      "name": "UK Insurance News",
+      "url": "https://www.insuranceage.co.uk/rss",
+      "category": "insurance",
+      "enabled": true,
+      "ai_keywords": [
+        "insurance",
+        "insurtech",
+        "insurance technology",
+        "AI",
+        "machine learning"
+      ]
+    },
+    {
+      "name": "London Tech Week",
+      "url": "https://www.techweek.co.uk/rss",
+      "category": "tech",
+      "enabled": true,
+      "ai_keywords": [
+        "London",
+        "UK tech",
+        "startups",
+        "technology",
+        "AI",
+        "artificial intelligence"
+      ]
+    },
+    {
+      "name": "TechCrunch US",
+      "url": "https://techcrunch.com/feed/",
+      "category": "tech",
+      "enabled": true,
+      "ai_keywords": [
+        "AI",
+        "startups",
+        "technology"
+      ]
+    },
+    {
+      "name": "US InsurTech Hub",
+      "url": "https://techcrunch.com/category/artificial-intelligence/feed",
+      "category": "tech",
+      "enabled": true,
+      "ai_keywords": [
+        "insurtech",
+        "insurance",
+        "artificial intelligence",
+        "AI",
+        "machine learning",
+        "insurance technology"
+      ]
+    },
+    {
+      "name": "BBC News UK",
+      "url": "https://feeds.bbci.co.uk/news/rss.xml",
+      "category": "news",
+      "enabled": true,
+      "ai_keywords": [
+        "AI",
+        "artificial intelligence",
+        "technology"
+      ]
+    },
+    {
+      "name": "UK Insurance News",
+      "url": "https://www.insuranceage.co.uk/rss",
+      "category": "insurance",
+      "enabled": true,
+      "ai_keywords": [
+        "insurance",
+        "insurtech",
+        "insurance technology",
+        "AI",
+        "machine learning"
+      ]
+    },
+    {
+      "name": "London Tech Week",
+      "url": "https://www.techweek.co.uk/rss",
+      "category": "tech",
+      "enabled": true,
+      "ai_keywords": [
+        "London",
+        "UK tech",
+        "startups",
+        "technology",
+        "AI",
+        "artificial intelligence"
+      ]
+    },
+    {
+      "name": "UK Insurance Technology",
+      "url": "https://www.uktech.news/feed",
+      "category": "technology",
+      "enabled": true,
+      "ai_keywords": [
+        "insurance",
+        "insurtech",
+        "AI",
+        "artificial intelligence",
+        "insurance technology",
+        "fintech",
+        "digital"
+      ]
+    },
+    {
+      "name": "TechCrunch US",
+      "url": "https://techcrunch.com/feed/",
+      "category": "tech",
+      "enabled": true,
+      "ai_keywords": [
+        "AI",
+        "startups",
+        "technology"
+      ]
+    },
+    {
+      "name": "US InsurTech Hub",
+      "url": "https://techcrunch.com/category/artificial-intelligence/feed",
+      "category": "tech",
+      "enabled": true,
+      "ai_keywords": [
+        "insurtech",
+        "insurance",
+        "artificial intelligence",
+        "AI",
+        "machine learning",
+        "insurance technology"
+      ]
     }
   ],
-  "max_articles_per_feed": 50,
-  "collection_interval_hours": 6,
   "schedule": {
-    "enabled": false,
-    "interval": "daily",
+    "enabled": true,
+    "interval": "hourly",
     "last_collection": null,
     "next_collection": null
   }

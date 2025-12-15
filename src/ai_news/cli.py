@@ -444,12 +444,18 @@ def handle_feeds_command(args, config):
         
     elif args.feeds_command == 'list':
         region = getattr(args, 'region', None)
+        enabled_only = getattr(args, 'enabled_only', False)
         
         if region:
             # List feeds for specific region
             if region in config.regions:
                 feeds = config.regions[region].feeds
+                if enabled_only:
+                    feeds = [feed for feed in feeds if feed.enabled]
+                
                 print(f"\n📡 Feeds for {region.upper()} region:")
+                if enabled_only:
+                    print("(Enabled feeds only)")
                 print("-" * 50)
                 
                 for i, feed in enumerate(feeds, 1):
@@ -463,12 +469,18 @@ def handle_feeds_command(args, config):
         else:
             # List all feeds by region
             print("\n🌍 All Feeds by Region:")
+            if enabled_only:
+                print("(Enabled feeds only)")
             print("=" * 50)
             
             for region_code, region_config in config.regions.items():
-                if region_config.feeds:
+                feeds = region_config.feeds
+                if enabled_only:
+                    feeds = [feed for feed in feeds if feed.enabled]
+                
+                if feeds:
                     print(f"\n{region_code.upper()} ({region_config.name}):")
-                    for feed in region_config.feeds:
+                    for feed in feeds:
                         status = "✅" if feed.enabled else "❌"
                         print(f"  {status} {feed.name}")
     
@@ -655,7 +667,7 @@ def main():
     schedule_cron_parser = schedule_subparsers.add_parser('cron-setup', help='Show cron setup instructions')
     
     # Schedule clear command
-    schedule_clear_parser = subparsers.add_parser('clear', help='Clear schedule settings')
+    schedule_clear_parser = schedule_subparsers.add_parser('clear', help='Clear schedule settings')
     
     # Feeds management commands
     feeds_parser = subparsers.add_parser('feeds', help='Manage RSS feeds')

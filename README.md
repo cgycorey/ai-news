@@ -620,7 +620,7 @@ uv run ai-news feeds remove "UK Insurance News" --region uk
 If you have an existing configuration with flat feeds structure, run the migration script:
 
 ```bash
-python scripts/migrate_to_regions.py config.json
+./scripts/migrate_to_regions.py config.json
 ```
 
 This will:

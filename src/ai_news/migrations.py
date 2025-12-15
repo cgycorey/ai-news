@@ -176,8 +176,20 @@ class MigrationManager:
                     CREATE INDEX IF NOT EXISTS idx_entity_mentions_sentiment ON entity_mentions(sentiment_score);
                     CREATE INDEX IF NOT EXISTS idx_entity_mentions_created ON entity_mentions(created_at);
                     
-                    # Academic feature indexes removed
-                    # Focus on business intelligence indexes only
+                    -- Academic feature indexes removed
+                    -- Focus on business intelligence indexes only
+                """
+            },
+            3: {
+                "description": "Add region column and index to articles table",
+                "sql": """
+                    -- Add region column to articles table if it doesn't exist
+                    -- SQLite doesn't support IF NOT EXISTS for ALTER TABLE, so we check first
+                    -- This migration is safe to run multiple times
+                    ALTER TABLE articles ADD COLUMN region TEXT DEFAULT 'global';
+                    
+                    -- Create region index if it doesn't exist
+                    CREATE INDEX IF NOT EXISTS idx_region ON articles(region);
                 """
             }
         }

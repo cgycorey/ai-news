@@ -3,10 +3,13 @@
 import urllib.request
 import urllib.parse
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional, Tuple, Set
 import time
 import re
 import html
+from difflib import SequenceMatcher
+from dataclasses import dataclass
+from collections import defaultdict, Counter
 
 from .config import FeedConfig, Config, RegionConfig
 from .database import Article, Database
@@ -29,15 +32,63 @@ class SimpleCollector:
         return clean_text_content(html_content)
     
     def is_ai_relevant(self, title: str, content: str, keywords: List[str]) -> tuple[bool, List[str]]:
-        """Check if content is AI-related based on keywords."""
+        """Check if content is AI-related based on enhanced keyword matching."""
         text = (title + " " + content).lower()
         found_keywords = []
         
+        # Keyword variations for common AI terms
+        keyword_variations = {
+            'ai': ['ai', 'a.i.', 'artificial intelligence'],
+            'ml': ['ml', 'machine learning'],
+            'dl': ['dl', 'deep learning'],
+            'nlp': ['nlp', 'natural language processing'],
+            'llm': ['llm', 'large language model'],
+            'gpt': ['gpt', 'chatgpt', 'gpt-3', 'gpt-4'],
+            'api': ['api', 'application programming interface']
+        }
+        
         for keyword in keywords:
-            if keyword.lower() in text:
+            keyword_lower = keyword.lower()
+            
+            # 1. Direct word boundary matching (prevents "ai" matching "saint")
+            if self._matches_word_boundary(keyword_lower, text):
                 found_keywords.append(keyword)
+                continue
+                
+            # 2. Check variations
+            if keyword_lower in keyword_variations:
+                for variation in keyword_variations[keyword_lower]:
+                    if self._matches_word_boundary(variation, text):
+                        found_keywords.append(keyword)
+                        break
+                        
+            # 3. Basic fuzzy matching for typos (threshold 0.85)
+            if self._fuzzy_match(keyword_lower, text, 0.85):
+                found_keywords.append(f"{keyword} (fuzzy)")
         
         return len(found_keywords) > 0, found_keywords
+    
+    def _matches_word_boundary(self, keyword: str, text: str) -> bool:
+        """Check if keyword appears as a whole word in text."""
+        # For patterns with dots, use more flexible matching
+        if '.' in keyword:
+            # Handle A.I., L.L.M., etc.
+            escaped_keyword = re.escape(keyword)
+            pattern = rf'(?<!\w){escaped_keyword}(?!\w)'
+        else:
+            # Standard word boundary matching
+            escaped_keyword = re.escape(keyword)
+            pattern = rf'\b{escaped_keyword}\b'
+        return bool(re.search(pattern, text, re.IGNORECASE))
+    
+    def _fuzzy_match(self, keyword: str, text: str, threshold: float = 0.85) -> bool:
+        """Basic fuzzy matching using SequenceMatcher."""
+        words = text.split()
+        for word in words:
+            similarity = SequenceMatcher(None, keyword, word).ratio()
+            if similarity >= threshold:
+                return True
+        return False
     
     def create_summary(self, content: str, max_length: int = 200) -> str:
         """Create a simple summary by truncating content."""
@@ -209,6 +260,7 @@ class SimpleCollector:
                     published_at=published_at,
                     source_name=feed_config.name,
                     category=feed_config.category,
+                    region="global",  # Default region, will be updated in _process_feed
                     ai_relevant=is_ai,
                     ai_keywords_found=keywords_found
                 )
@@ -277,7 +329,7 @@ class SimpleCollector:
             ai_count = 0
             
             for article in articles:
-                if self.database.add_article(article):
+                if self.database.save_article(article):
                     added_count += 1
                     if article.ai_relevant:
                         ai_count += 1
@@ -298,12 +350,12 @@ class SimpleCollector:
         """Collect news from specific region only."""
         if region not in config.regions:
             print(f"❌ Unknown region: {region}")
-            return {"feeds_processed": 0, "total_fetched": 0, "total_added": 0}
+            return {"feeds_processed": 0, "total_fetched": 0, "total_added": 0, "ai_relevant_added": 0}
         
         region_config = config.regions[region]
         if not region_config.enabled:
             print(f"⚠️  Region {region} is disabled")
-            return {"feeds_processed": 0, "total_fetched": 0, "total_added": 0}
+            return {"feeds_processed": 0, "total_fetched": 0, "total_added": 0, "ai_relevant_added": 0}
         
         print(f"🌍 Collecting news from {region_config.name} ({region.upper()})...")
         
@@ -336,7 +388,7 @@ class SimpleCollector:
 
     def collect_multiple_regions(self, config: Config, regions: List[str]) -> Dict[str, Any]:
         """Collect news from multiple regions."""
-        total_stats: Dict[str, Any] = {
+        total_stats = {
             "regions_processed": 0,
             "feeds_processed": 0,
             "total_fetched": 0,
@@ -368,7 +420,7 @@ class SimpleCollector:
                 # Update article with region
                 article.region = region
                 
-                if self.database.add_article(article):
+                if self.database.save_article(article):
                     stats["added"] += 1
                     if article.ai_relevant:
                         stats["ai_relevant"] += 1
