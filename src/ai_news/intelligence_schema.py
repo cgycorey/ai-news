@@ -156,7 +156,7 @@ def create_intelligence_schema(db_path: str) -> bool:
 def add_intelligence_columns_to_main_articles():
     """Add intelligence layer columns to existing articles table."""
     try:
-        with sqlite3.connect("ai_news.db") as conn:
+        with sqlite3.connect("data/production/ai_news.db") as conn:
             # Check if columns already exist
             cursor = conn.execute("PRAGMA table_info(articles)")
             columns = [row[1] for row in cursor.fetchall()]
@@ -187,7 +187,7 @@ def add_intelligence_columns_to_main_articles():
 
 if __name__ == "__main__":
     # Test the schema creation
-    db_path = "ai_news.db"
+    db_path = "data/production/ai_news.db"
     
     # Remove existing database if it exists
     if Path(db_path).exists():

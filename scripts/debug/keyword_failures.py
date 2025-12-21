@@ -295,7 +295,13 @@ class KeywordFailureDiagnostic:
         ]
 
         for issue_data in intersection_issues:
-            self.results.append(DiagnosticResult(**issue_data))
+            self.results.append(DiagnosticResult(
+                issue=issue_data["issue"],
+                severity="HIGH",
+                description=issue_data["description"],
+                evidence=issue_data["evidence"],
+                recommendation=issue_data["recommendation"]
+            ))
 
     def test_failing_combinations(self):
         """Test the specific failing combinations reported by user."""

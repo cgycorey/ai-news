@@ -81,7 +81,7 @@ class EntityPattern:
 class EntityManager:
     """Manages entities dynamically with learning capabilities."""
     
-    def __init__(self, entities_dir: str = "entities", db_path: str = "ai_news.db"):
+    def __init__(self, entities_dir: str = "entities", db_path: str = "data/production/ai_news.db"):
         """Initialize entity manager.
         
         Args:

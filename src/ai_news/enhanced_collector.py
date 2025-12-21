@@ -90,27 +90,32 @@ class EnhancedMultiKeywordCollector:
             'insurance': KeywordCategory(
                 name='insurance',
                 keywords=[
-                    'insurance', 'insurtech', 'underwriting', 'claims', 'risk', 
-                    'premium', 'coverage', 'deductible', 'policy', 'actuarial',
-                    'reinsurance', 'broker', 'Lloyd\'s'
+                    'insurance', 'insurtech', 'insur tech', 'insurance technology', 'underwriting', 'claims', 'risk', 
+                    'premium', 'coverage', 'deductible', 'policy', 'actuarial', 'actuarial science',
+                    'reinsurance', 'broker', 'Lloyd\'s', 'insurance startup', 'digital insurance',
+                    'claims processing', 'risk assessment', 'policy management'
                 ],
                 weight=0.8
             ),
             'healthcare': KeywordCategory(
                 name='healthcare',
                 keywords=[
-                    'healthcare', 'medical', 'diagnostics', 'medicine', 'clinical',
-                    'hospital', 'biotech', 'pharmaceutical', 'drug discovery',
-                    'medical imaging', 'telemedicine', 'health'
+                    'healthcare', 'health care', 'medical', 'diagnostics', 'medicine', 'clinical',
+                    'hospital', 'biotech', 'biotechnology', 'pharmaceutical', 'pharma', 'drug discovery',
+                    'medical imaging', 'telemedicine', 'health', 'health tech', 'health technology',
+                    'digital health', 'medical technology', 'medtech', 'life sciences', 'healthcare IT',
+                    'clinical trials', 'medical devices', 'personalized medicine'
                 ],
                 weight=0.8
             ),
             'fintech': KeywordCategory(
                 name='fintech',
                 keywords=[
-                    'fintech', 'banking', 'financial', 'trading', 'payments',
-                    'fraud detection', 'regtech', 'compliance', 'anti-money laundering',
-                    'AML', 'digital banking'
+                    'fintech', 'fin tech', 'financial technology', 'banking', 'financial', 'trading', 'payments',
+                    'fraud detection', 'regtech', 'regulatory technology', 'compliance', 'anti-money laundering',
+                    'AML', 'digital banking', 'neobank', 'neo bank', 'challenger bank', 'online banking',
+                    'cryptocurrency', 'crypto', 'blockchain', 'wealthtech', 'wealth management',
+                    'paytech', 'payment technology', 'insurtech', 'lending', 'credit scoring'
                 ],
                 weight=0.8
             ),
@@ -235,23 +240,32 @@ class EnhancedMultiKeywordCollector:
             return 0.0
         
         # Base intersection score increases with more categories
-        base_score = min(len(categories_with_matches) * 0.3, 1.0)
+        base_score = min(len(categories_with_matches) * 0.25, 1.0)
         
-        # Bonus for specific combinations
+        # Bonus for specific high-value combinations
         high_value_combinations = [
             {'ai', 'insurance'},
             {'ai', 'healthcare'},
             {'ai', 'fintech'},
+            {'ai', 'ml'},  # AI + ML is valuable
             {'insurance', 'healthcare'},
-            {'fintech', 'insurance'}
+            {'fintech', 'insurance'},
+            {'healthcare', 'biotech'},  # Healthcare + biotech combo
+            {'fintech', 'regtech'}  # Finance + regulatory combo
         ]
         
         category_set = set(categories_with_matches)
+        bonus_score = 0.0
         for combo in high_value_combinations:
             if combo.issubset(category_set):
-                base_score += 0.2
+                bonus_score += 0.15  # Add bonus for each high-value combo
         
-        return min(base_score, 1.0)
+        # Quality bonus: more matches per category indicates stronger relevance
+        total_matches = sum(len(matches) for matches in category_matches.values())
+        quality_bonus = min(total_matches * 0.02, 0.2)  # Up to 0.2 bonus for many matches
+        
+        final_score = base_score + bonus_score + quality_bonus
+        return min(final_score, 1.0)
     
     def calculate_region_boost(self, text: str, region: str) -> float:
         """Calculate region-specific boost for keywords."""
@@ -299,8 +313,9 @@ class EnhancedMultiKeywordCollector:
         if self.performance_mode and not self.keyword_index:
             self.build_keyword_index(categories)
         
-        # Combine title and content for analysis
-        full_text = (title + " " + content).lower()
+        # Combine title, summary, and content for comprehensive analysis
+        summary = content[:200] + "..." if len(content) > 200 else content  # Create summary if not provided
+        full_text = (title + " " + summary + " " + content).lower()
         
         # Analyze each category
         category_matches = {}

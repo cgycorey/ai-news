@@ -66,15 +66,18 @@ class EnhancedMultiKeywordCollector:
         self.keyword_index = {}  # For performance optimization
         self.regional_keywords = {}  # Region-specific keyword boosts
         
-        # Default keyword variations for common AI terms
+        # Default keyword variations for common AI terms (expanded)
         self.default_variations = {
-            'ai': ['ai', 'a.i.', 'artificial intelligence'],
-            'ml': ['ml', 'machine learning'],
-            'dl': ['dl', 'deep learning'],
-            'nlp': ['nlp', 'natural language processing'],
-            'llm': ['llm', 'large language model'],
-            'gpt': ['gpt', 'chatgpt', 'gpt-3', 'gpt-4'],
-            'api': ['api', 'application programming interface']
+            'ai': ['ai', 'a.i.', 'artificial intelligence', 'ai-powered', 'ai-driven', 'ai-based'],
+            'ml': ['ml', 'machine learning', 'machine-learning'],
+            'dl': ['dl', 'deep learning', 'deep-learning'],
+            'nlp': ['nlp', 'natural language processing', 'nlu', 'natural language understanding'],
+            'llm': ['llm', 'large language model', 'large language models'],
+            'gpt': ['gpt', 'chatgpt', 'gpt-3', 'gpt-4', 'gpt3', 'gpt4'],
+            'api': ['api', 'application programming interface', 'apis'],
+            'computer vision': ['computer vision', 'cv', 'machine vision', 'image recognition'],
+            'neural network': ['neural network', 'neural networks', 'nn', 'deep neural network'],
+            'algorithm': ['algorithm', 'algorithms', 'algorithmic', 'algo']
         }
         
         # Initialize keyword categories for common use cases
@@ -105,39 +108,115 @@ class EnhancedMultiKeywordCollector:
             'healthcare': KeywordCategory(
                 name='healthcare',
                 keywords=[
-                    'healthcare', 'medical', 'diagnostics', 'medicine', 'clinical',
-                    'hospital', 'biotech', 'pharmaceutical', 'drug discovery',
-                    'medical imaging', 'telemedicine', 'health'
+                    # Core healthcare terms
+                    'healthcare', 'health care', 'medical', 'medicine', 'clinical',
+                    'hospital', 'hospitals', 'health', 'wellness', 'patient care',
+                    
+                    # Technology-focused healthcare
+                    'health tech', 'healthtech', 'health technology', 'digital health',
+                    'medical AI', 'healthcare AI', 'ai healthcare', 'ai medical',
+                    'healthcare IT', 'medical technology', 'medtech', 'medical devices',
+                    
+                    # Specialized areas
+                    'biotech', 'biotechnology', 'pharmaceutical', 'pharma', 'drug discovery',
+                    'drug development', 'clinical trials', 'clinical research',
+                    'medical imaging', 'diagnostics', 'diagnostic', 'telemedicine',
+                    'telehealth', 'digital therapeutics', 'personalized medicine',
+                    
+                    # Healthcare services
+                    'healthcare delivery', 'patient outcomes', 'medical diagnosis',
+                    'treatment', 'therapy', 'surgical', 'electronic health records',
+                    'ehr', 'electronic medical records', 'emr', 'health informatics'
                 ],
-                weight=0.8
+                weight=0.8,
+                variations={
+                    'healthcare': ['healthcare', 'health care', 'health', 'medical'],
+                    'biotech': ['biotech', 'biotechnology', 'biological technology'],
+                    'pharma': ['pharma', 'pharmaceutical', 'pharmaceuticals', 'drug'],
+                    'telemedicine': ['telemedicine', 'telehealth', 'digital health', 'virtual care']
+                }
             ),
             'fintech': KeywordCategory(
                 name='fintech',
                 keywords=[
-                    'fintech', 'banking', 'financial', 'trading', 'payments',
-                    'fraud detection', 'regtech', 'compliance', 'anti-money laundering',
-                    'AML', 'digital banking'
+                    # Core fintech terms
+                    'fintech', 'fin tech', 'financial technology', 'financial tech',
+                    'banking', 'finance', 'financial services', 'digital banking',
+                    'online banking', 'mobile banking', 'neobank', 'neo-bank',
+                    
+                    # Payments and transactions
+                    'payments', 'payment processing', 'digital payments',
+                    'mobile payments', 'contactless payments', 'cryptocurrency',
+                    'crypto', 'bitcoin', 'blockchain', 'distributed ledger',
+                    
+                    # Trading and investment
+                    'trading', 'algorithmic trading', 'algo trading', 'robo-advisor',
+                    'robo advisor', 'investment', 'wealth management', 'asset management',
+                    'portfolio', 'stocks', 'equities', 'securities',
+                    
+                    # Insurance and risk
+                    'insurtech', 'insurance technology', 'underwriting', 'risk assessment',
+                    'risk management', 'claims processing', 'insurance', 'reinsurance',
+                    
+                    # Regulation and compliance
+                    'regtech', 'regulatory technology', 'compliance', 'anti-money laundering',
+                    'aml', 'kyc', 'know your customer', 'fraud detection', 'fraud prevention',
+                    
+                    # Lending and credit
+                    'lending', 'digital lending', 'peer to peer lending', 'p2p lending',
+                    'credit scoring', 'loan origination', 'mortgage', 'consumer credit'
                 ],
-                weight=0.8
+                weight=0.8,
+                variations={
+                    'fintech': ['fintech', 'fin tech', 'financial technology', 'finance tech'],
+                    'cryptocurrency': ['cryptocurrency', 'crypto', 'digital currency', 'virtual currency'],
+                    'blockchain': ['blockchain', 'distributed ledger', 'dl', 'distributed ledger technology'],
+                    'insurtech': ['insurtech', 'insurance technology', 'insuretech'],
+                    'regtech': ['regtech', 'regulatory technology', 'compliance tech']
+                }
             )
         }
         
-        # Initialize regional keyword boosts
+        # Initialize regional keyword boosts (expanded for better coverage)
         self.regional_keywords = {
             'uk': {
-                'boost_terms': ['London', 'British', 'UK', 'Lloyd\'s', 'NHS'],
+                'boost_terms': [
+                    'London', 'British', 'UK', 'United Kingdom', 'England', 'Scotland', 'Wales', 'Northern Ireland',
+                    'Lloyd\'s', 'Lloyd\'s of London', 'NHS', 'National Health Service', 'FCA', 'Financial Conduct Authority',
+                    'Bank of England', 'Pound Sterling', 'GBP', 'Manchester', 'Birmingham', 'Edinburgh', 'Cardiff'
+                ],
                 'boost_factor': 1.2
             },
             'us': {
-                'boost_terms': ['American', 'US', 'FDA', 'HHS', 'Wall Street'],
-                'boost_factor': 1.1
+                'boost_terms': [
+                    'American', 'US', 'USA', 'United States', 'United States of America',
+                    'FDA', 'Food and Drug Administration', 'HHS', 'Health and Human Services',
+                    'Wall Street', 'NYSE', 'NASDAQ', 'SEC', 'Securities and Exchange Commission',
+                    'Federal Reserve', 'Fed', 'CDC', 'Centers for Disease Control',
+                    'Medicare', 'Medicaid', 'HIPAA', 'Sarbanes-Oxley', 'SOX', 'Dodd-Frank',
+                    'Silicon Valley', 'New York', 'San Francisco', 'Boston', 'Chicago', 'Washington',
+                    'California', 'Texas', 'New York Stock Exchange', 'American'
+                ],
+                'boost_factor': 1.15  # Increased from 1.1
             },
             'eu': {
-                'boost_terms': ['European', 'EU', 'Eurozone', 'GDPR'],
+                'boost_terms': [
+                    'European', 'EU', 'European Union', 'Eurozone', 'Euro', 'EUR',
+                    'GDPR', 'General Data Protection Regulation', 'ECB', 'European Central Bank',
+                    'ESMA', 'European Securities and Markets Authority', 'Brexit', 'EBA',
+                    'European Banking Authority', 'Paris', 'Berlin', 'Frankfurt', 'Amsterdam',
+                    'Brussels', 'Luxembourg', 'Dublin', 'Milan', 'Madrid'
+                ],
                 'boost_factor': 1.1
             },
             'apac': {
-                'boost_terms': ['Asia-Pacific', 'APAC', 'Singapore', 'Tokyo'],
+                'boost_terms': [
+                    'Asia-Pacific', 'APAC', 'Asia Pacific', 'Singapore', 'Tokyo', 'Japan',
+                    'Hong Kong', 'Shanghai', 'Beijing', 'Seoul', 'Sydney', 'Melbourne',
+                    'MAS', 'Monetary Authority of Singapore', 'HKMA', 'Hong Kong Monetary Authority',
+                    'Reserve Bank of India', 'RBI', 'People\'s Bank of China', 'PBOC', 'Bangko Sentral',
+                    'ASEAN', 'Southeast Asia'
+                ],
                 'boost_factor': 1.1
             }
         }
@@ -161,20 +240,37 @@ class EnhancedMultiKeywordCollector:
                         self.keyword_index[variation].append((category_name, category.weight * 0.9))  # Slightly lower weight for variations
     
     def matches_word_boundary(self, keyword: str, text: str) -> List[Tuple[int, int]]:
-        """Find all word boundary matches for a keyword in text."""
+        """Find enhanced word boundary matches with looser criteria for better intersection detection."""
         positions = []
         
-        # For patterns with dots, use more flexible matching
-        if '.' in keyword:
-            escaped_keyword = re.escape(keyword)
-            pattern = rf'(?<!\w){escaped_keyword}(?!\w)'
-        else:
-            # Standard word boundary matching
-            escaped_keyword = re.escape(keyword)
-            pattern = rf'\b{escaped_keyword}\b'
+        # Try multiple matching strategies, from strict to loose
+        strategies = [
+            # Strategy 1: Exact word boundary (strictest)
+            lambda: re.finditer(rf'\b{re.escape(keyword)}\b', text, re.IGNORECASE),
+            
+            # Strategy 2: Pattern with dots/acronyms (medium)
+            lambda: re.finditer(rf'(?<!\w){re.escape(keyword)}(?!\w)', text, re.IGNORECASE) if '.' in keyword else [],
+            
+            # Strategy 3: Flexible boundaries for compound terms (looser)
+            lambda: re.finditer(rf'{re.escape(keyword)}', text, re.IGNORECASE) if len(keyword.split()) > 1 else [],
+            
+            # Strategy 4: Partial matching for short terms (loosest, but limited)
+            lambda: re.finditer(rf'{re.escape(keyword)}', text, re.IGNORECASE) if len(keyword) <= 3 else []
+        ]
         
-        for match in re.finditer(pattern, text, re.IGNORECASE):
-            positions.append((match.start(), match.end()))
+        # Apply strategies in order, collect unique positions
+        seen_positions = set()
+        for strategy_func in strategies:
+            try:
+                matches = strategy_func()
+                if matches:
+                    for match in matches:
+                        pos_tuple = (match.start(), match.end())
+                        if pos_tuple not in seen_positions:
+                            positions.append(pos_tuple)
+                            seen_positions.add(pos_tuple)
+            except:
+                continue
         
         return positions
     
@@ -200,30 +296,85 @@ class EnhancedMultiKeywordCollector:
         return text[start:end].strip()
     
     def calculate_intersection_score(self, category_matches: Dict[str, List[KeywordMatch]]) -> float:
-        """Calculate intersection score for articles matching multiple categories."""
+        """Calculate enhanced intersection score with semantic matching and looser criteria."""
         categories_with_matches = [cat for cat, matches in category_matches.items() if matches]
         
         if len(categories_with_matches) < 2:
             return 0.0
         
-        # Base intersection score increases with more categories
-        base_score = min(len(categories_with_matches) * 0.3, 1.0)
+        # Enhanced base score calculation - more generous for multiple categories
+        base_score = min(len(categories_with_matches) * 0.4, 1.0)  # Increased from 0.3 to 0.4
         
-        # Bonus for specific combinations
+        # Quality boost based on match strength per category
+        quality_boost = 0.0
+        for category, matches in category_matches.items():
+            if matches:
+                # Boost based on number of matches and average score
+                avg_category_score = sum(m.score for m in matches) / len(matches)
+                match_count_boost = min(len(matches) * 0.1, 0.3)  # Up to 0.3 boost for multiple matches
+                quality_boost += avg_category_score * match_count_boost
+        
+        base_score += min(quality_boost, 0.3)  # Cap quality boost at 0.3
+        
+        # Enhanced high-value combination detection
         high_value_combinations = [
             {'ai', 'insurance'},
             {'ai', 'healthcare'},
             {'ai', 'fintech'},
+            {'ai', 'healthcare'},  # Duplicate for emphasis
+            {'ai', 'fintech'},     # Duplicate for emphasis
             {'insurance', 'healthcare'},
-            {'fintech', 'insurance'}
+            {'fintech', 'insurance'},
+            {'ai', 'fintech'},     # Triple AI combos get extra boost
+            {'ai', 'healthcare', 'fintech'},  # Triple combo bonus
         ]
         
         category_set = set(categories_with_matches)
         for combo in high_value_combinations:
             if combo.issubset(category_set):
-                base_score += 0.2
+                if len(combo) == 3:  # Triple intersection gets bigger bonus
+                    base_score += 0.4
+                elif len(combo) == 2:  # Double intersection
+                    base_score += 0.25
+                
+        # Semantic proximity bonus - check if keywords are conceptually related
+        semantic_bonus = self._calculate_semantic_proximity(category_matches)
+        base_score += semantic_bonus
         
         return min(base_score, 1.0)
+    
+    def _calculate_semantic_proximity(self, category_matches: Dict[str, List[KeywordMatch]]) -> float:
+        """Calculate semantic proximity bonus for related concepts."""
+        bonus = 0.0
+        
+        # Check for semantically related terms across categories
+        all_keywords = []
+        for category, matches in category_matches.items():
+            for match in matches:
+                all_keywords.append((match.keyword.lower(), category))
+        
+        # Define semantic relationship groups
+        semantic_groups = {
+            'tech_concepts': ['ai', 'artificial intelligence', 'machine learning', 'ml', 'deep learning', 'dl', 'algorithm', 'automation', 'neural network'],
+            'health_concepts': ['healthcare', 'medical', 'medicine', 'health', 'clinical', 'hospital', 'diagnostics', 'pharmaceutical', 'biotech'],
+            'finance_concepts': ['fintech', 'banking', 'financial', 'trading', 'payments', 'insurance', 'insurtech', 'fraud detection', 'regtech'],
+            'data_concepts': ['data', 'analytics', 'big data', 'data science', 'predictive', 'model', 'algorithm']
+        }
+        
+        # Check cross-category semantic relationships
+        for i, (kw1, cat1) in enumerate(all_keywords):
+            for kw2, cat2 in all_keywords[i+1:]:
+                if cat1 == cat2:
+                    continue
+                    
+                # Check if keywords belong to same semantic group
+                for group_name, group_terms in semantic_groups.items():
+                    if (any(kw1 in term or term in kw1 for term in group_terms) and 
+                        any(kw2 in term or term in kw2 for term in group_terms)):
+                        bonus += 0.1
+                        break
+        
+        return min(bonus, 0.2)  # Cap semantic bonus at 0.2
     
     def calculate_region_boost(self, text: str, region: str) -> float:
         """Calculate region-specific boost for keywords."""
@@ -267,6 +418,26 @@ class EnhancedMultiKeywordCollector:
         if categories is None:
             categories = self.categories
         
+        # Ensure categories is a dictionary of KeywordCategory objects
+        if categories is None:
+            categories = self.categories
+        elif not isinstance(categories, dict):
+            categories = self.categories  # Fallback to default
+        else:
+            # Convert to KeywordCategory objects if needed
+            processed_categories = {}
+            for key, value in categories.items():
+                if isinstance(value, KeywordCategory):
+                    processed_categories[key] = value
+                else:
+                    # Assume it's a list of keywords, create KeywordCategory
+                    processed_categories[key] = KeywordCategory(
+                        name=key,
+                        keywords=value if isinstance(value, list) else [value],
+                        weight=1.0
+                    )
+            categories = processed_categories
+        
         # Build performance index if needed
         if self.performance_mode and not self.keyword_index:
             self.build_keyword_index(categories)
@@ -284,19 +455,63 @@ class EnhancedMultiKeywordCollector:
             
             for keyword in category.keywords:
                 keyword_lower = keyword.lower()
+                all_positions = []
                 
-                # Direct word boundary matching
+                # Strategy 1: Direct word boundary matching (highest confidence)
                 positions = self.matches_word_boundary(keyword_lower, full_text)
+                all_positions.extend([(pos, end_pos, 1.0) for pos, end_pos in positions])  # Full weight
                 
-                # Check variations if no direct matches
-                if not positions and keyword_lower in category.variations:
+                # Strategy 2: Check category variations (high confidence)
+                if category.variations and keyword_lower in category.variations:
                     for variation in category.variations[keyword_lower]:
-                        positions.extend(self.matches_word_boundary(variation, full_text))
+                        var_positions = self.matches_word_boundary(variation, full_text)
+                        all_positions.extend([(pos, end_pos, 0.9) for pos, end_pos in var_positions])  # Slightly lower weight
                 
-                # Fuzzy matching as fallback
-                if not positions:
-                    fuzzy_positions = self.fuzzy_match(keyword_lower, full_text, 0.85)
-                    positions.extend(fuzzy_positions)
+                # Strategy 3: Check default variations (medium confidence)
+                if keyword_lower in self.default_variations:
+                    for variation in self.default_variations[keyword_lower]:
+                        var_positions = self.matches_word_boundary(variation, full_text)
+                        all_positions.extend([(pos, end_pos, 0.85) for pos, end_pos in var_positions])  # Medium weight
+                
+                # Strategy 4: Enhanced fuzzy matching (lower confidence, but more inclusive)
+                fuzzy_positions = self.fuzzy_match(keyword_lower, full_text, 0.75)  # Lowered threshold from 0.85
+                all_positions.extend([(pos, end_pos, 0.7) for pos, end_pos in fuzzy_positions])  # Lower weight for fuzzy
+                
+                # Strategy 5: Partial matching for compound terms (lowest confidence)
+                if len(keyword.split()) > 1:
+                    words = keyword.split()
+                    for word in words:
+                        if len(word) > 3:  # Only for meaningful words
+                            word_positions = self.matches_word_boundary(word, full_text)
+                            all_positions.extend([(pos, end_pos, 0.5) for pos, end_pos in word_positions])  # Low weight
+                
+                # Deduplicate positions (keep highest confidence weight)
+                deduplicated_positions = {}
+                for pos, end_pos, confidence in all_positions:
+                    key = (pos, end_pos)
+                    if key not in deduplicated_positions or confidence > deduplicated_positions[key][1]:
+                        deduplicated_positions[key] = (keyword_lower, confidence)
+                
+                # Create keyword matches with confidence-weighted scoring
+                for (pos, end_pos), (matched_keyword, confidence) in deduplicated_positions.items():
+                    context = self.extract_context(title + " " + content, pos)
+                    
+                    # Enhanced scoring with confidence weighting
+                    base_score = category.weight * category.weight
+                    confidence_weight = confidence  # 0.5 to 1.0 based on match type
+                    position_boost = 1.0 - (pos / len(full_text)) * 0.3  # Earlier mentions get higher score
+                    final_score = base_score * confidence_weight * position_boost
+                    
+                    keyword_match = KeywordMatch(
+                        keyword=keyword,  # Original keyword, not the matched variation
+                        category=category_name,
+                        score=final_score,
+                        position=pos,
+                        context=context,
+                        weight=category.weight * confidence_weight  # Adjusted weight based on confidence
+                    )
+                    matches.append(keyword_match)
+                    total_category_score += final_score
                 
                 # Create keyword matches
                 for pos, end_pos in positions:

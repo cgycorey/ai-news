@@ -106,7 +106,7 @@ class RegionConfig:
 @dataclass
 class Config:
     """Main application configuration."""
-    database_path: str = "ai_news.db"
+    database_path: str = "data/production/ai_news.db"
     regions: Dict[str, RegionConfig] = field(default_factory=dict)
     feeds: List[FeedConfig] = field(default_factory=list)  # Backward compatibility
     max_articles_per_feed: int = 50
@@ -216,7 +216,7 @@ class Config:
         schedule = ScheduleConfig.from_dict(schedule_data)
         
         config = cls(
-            database_path=data.get('database_path', 'ai_news.db'),
+            database_path=data.get('database_path', 'data/production/ai_news.db'),
             regions=regions,
             max_articles_per_feed=data.get('max_articles_per_feed', 50),
             collection_interval_hours=data.get('collection_interval_hours', 6),
