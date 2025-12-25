@@ -16,7 +16,7 @@ def is_spacy_available() -> bool:
     except ImportError:
         return False
 
-def is_model_available(model_name: str = "en_core_web_md") -> bool:
+def is_model_available(model_name: str = "en_core_web_sm") -> bool:
     """Check if specific spaCy model is available."""
     if not is_spacy_available():
         return False
@@ -30,7 +30,7 @@ def is_model_available(model_name: str = "en_core_web_md") -> bool:
     except ImportError:
         return False
 
-def download_spacy_model(model_name: str = "en_core_web_md", user_prompt: bool = True) -> bool:
+def download_spacy_model(model_name: str = "en_core_web_sm", user_prompt: bool = True) -> bool:
     """Download spaCy model with optional user prompt."""
     if not is_spacy_available():
         print("❌ spaCy is not installed. Please install it first:")
@@ -75,7 +75,7 @@ def download_spacy_model(model_name: str = "en_core_web_md", user_prompt: bool =
         print("❌ spaCy command not found. Please ensure spaCy is properly installed.")
         return False
 
-def load_spacy_model(model_name: str = "en_core_web_md", auto_download: bool = True):
+def load_spacy_model(model_name: str = "en_core_web_sm", auto_download: bool = True):
     """Load spaCy model with graceful fallback."""
     if not is_spacy_available():
         print("⚠️  spaCy is not available. Using basic text processing only.")
@@ -120,7 +120,7 @@ def setup_spacy_interactive():
     
     print(f"✅ spaCy is installed")
     
-    model_name = "en_core_web_md"
+    model_name = "en_core_web_sm"
     if is_model_available(model_name):
         print(f"✅ Model '{model_name}' is already available")
         print("   You're all set for advanced NLP features!")

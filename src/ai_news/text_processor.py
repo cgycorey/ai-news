@@ -154,7 +154,7 @@ class TextStatistics:
 class TextProcessor:
     """Advanced text processing with NLP capabilities."""
     
-    def __init__(self, spacy_model: Optional[str] = "en_core_web_md"):
+    def __init__(self, spacy_model: Optional[str] = "en_core_web_sm"):
         """Initialize the text processor.
         
         Args:
