@@ -529,6 +529,6 @@ class TopicDiscovery:
         }
 
 
-def create_topic_discovery(database: Database) -> TopicDiscovery:
+def create_topic_discovery(database: Database, use_spacy: bool = True) -> TopicDiscovery:
     """Factory function to create TopicDiscovery instance."""
-    return TopicDiscovery(database)
+    return TopicDiscovery(database, use_spacy=use_spacy)

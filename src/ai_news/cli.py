@@ -16,6 +16,7 @@ from .collector import SimpleCollector
 from .search_collector import SearchEngineCollector
 from .markdown_generator import MarkdownGenerator
 from .entity_manager import get_entity_manager, Entity
+from .topic_discovery import create_topic_discovery
 
 # Heavy imports will be loaded lazily when needed
 # from .entity_extractor import create_entity_extractor
@@ -596,7 +597,42 @@ def main():
     # Entity import command
     entity_import_parser = entity_subparsers.add_parser('import', help='Import entities from file')
     entity_import_parser.add_argument('file', help='Input file path')
-    
+
+    # Topic management commands
+    topic_parser = subparsers.add_parser('topics', help='Topic management and discovery')
+    topic_subparsers = topic_parser.add_subparsers(dest='topic_command', help='Topic operations')
+
+    # Topics list command
+    topic_list_parser = topic_subparsers.add_parser('list', help='List all topics')
+    topic_list_parser.add_argument('--verbose', action='store_true', help='Show detailed information')
+
+    # Topics add command
+    topic_add_parser = topic_subparsers.add_parser('add', help='Add a new topic')
+    topic_add_parser.add_argument('name', help='Topic name')
+    topic_add_parser.add_argument('keywords', nargs='+', help='Keywords for this topic')
+    topic_add_parser.add_argument('--no-discover', action='store_true', help='Disable auto-discovery for this topic')
+
+    # Topics remove command
+    topic_remove_parser = topic_subparsers.add_parser('remove', help='Remove a topic')
+    topic_remove_parser.add_argument('name', help='Topic name to remove')
+
+    # Topics discover command
+    topic_discover_parser = topic_subparsers.add_parser('discover', help='Run topic discovery on database')
+    topic_discover_parser.add_argument('topic', help='Topic name to discover for (or "all" for all topics)')
+    topic_discover_parser.add_argument('--min-occurrence', type=int, default=3, help='Minimum occurrence threshold')
+    topic_discover_parser.add_argument('--prune', action='store_true', help='Prune stale discoveries after running')
+    topic_discover_parser.add_argument('--use-spacy', action='store_true', default=True, help='Use spaCy for term extraction (default: True)')
+    topic_discover_parser.add_argument('--no-spacy', action='store_true', help='Disable spaCy, use basic extraction')
+    topic_discover_parser.add_argument('--min-relevance', type=float, default=0.3, help='Minimum domain relevance score (default: 0.3)')
+
+    # Topics stats command
+    topic_stats_parser = topic_subparsers.add_parser('stats', help='Show discovery statistics')
+    topic_stats_parser.add_argument('topic', help='Topic name (or "all" for all topics)')
+
+    # Topics suggest command
+    topic_suggest_parser = topic_subparsers.add_parser('suggest', help='Suggest related topics')
+    topic_suggest_parser.add_argument('topic', help='Topic name to analyze')
+
     # Show command
     show_parser = subparsers.add_parser('show', help='Show full article details')
     show_parser.add_argument('article_id', type=int, help='Article ID to display')
@@ -1001,7 +1037,11 @@ def main():
                 
             else:
                 print("❌ Unknown entity command. Use --help to see available commands.")
-            
+
+        elif args.command == 'topics':
+            # Topic management commands
+            cmd_handle_topics(args, config, database)
+
         elif args.command == 'show':
             # Get all articles and find the one with matching ID
             articles = database.get_articles(limit=1000)
@@ -1142,6 +1182,208 @@ def main():
     except Exception as e:
         print(f"Error executing command: {e}")
         sys.exit(1)
+
+
+def cmd_handle_topics(args, config: Config, database: Database):
+    """Handle topic management commands."""
+    try:
+        if args.topic_command == 'list':
+            # List all topics
+            topics = config.list_topics()
+
+            if not topics:
+                print("📋 No topics configured yet.")
+                print("   Use 'ai-news topics add <name> <keywords>' to add topics")
+                return
+
+            print(f"\n📋 Configured Topics ({len(topics)}):")
+            print("=" * 60)
+
+            for topic_name in sorted(topics):
+                topic = config.topics[topic_name]
+
+                if args.verbose:
+                    print(f"\n{topic_name}:")
+                    print(f"   Keywords: {', '.join(topic.keywords[:10])}")
+                    if len(topic.keywords) > 10:
+                        print(f"             ... and {len(topic.keywords) - 10} more")
+                    print(f"   Auto-discover: {topic.auto_discover}")
+                    print(f"   Min confidence: {topic.min_confidence}")
+                else:
+                    keyword_preview = ', '.join(topic.keywords[:5])
+                    if len(topic.keywords) > 5:
+                        keyword_preview += f" ... (+{len(topic.keywords) - 5})"
+                    print(f"  • {topic_name}: {keyword_preview}")
+
+        elif args.topic_command == 'add':
+            # Add a new topic
+            topic = config.add_topic(
+                name=args.name,
+                keywords=args.keywords,
+                auto_discover=not args.no_discover
+            )
+
+            print(f"\n✅ Topic '{args.name}' added successfully!")
+            print(f"   Keywords: {', '.join(topic.keywords)}")
+            print(f"   Auto-discovery: {'enabled' if topic.auto_discover else 'disabled'}")
+
+        elif args.topic_command == 'remove':
+            # Remove a topic
+            if config.remove_topic(args.name):
+                print(f"\n✅ Topic '{args.name}' removed successfully!")
+            else:
+                print(f"\n❌ Topic '{args.name}' not found!")
+
+        elif args.topic_command == 'discover':
+            # Run topic discovery
+            use_spacy = args.use_spacy and not args.no_spacy
+            discovery = create_topic_discovery(database, use_spacy=use_spacy)
+
+            if args.topic == 'all':
+                # Discover for all topics with auto_discover enabled
+                topics_to_discover = [
+                    name for name, topic in config.topics.items()
+                    if topic.auto_discover
+                ]
+
+                if not topics_to_discover:
+                    print("📭 No topics with auto-discovery enabled.")
+                    return
+
+                print(f"\n🔍 Discovering for {len(topics_to_discover)} topics...")
+
+                total_discovered = 0
+                for topic_name in topics_to_discover:
+                    topic = config.topics[topic_name]
+                    articles = database.get_articles(limit=500)
+
+                    count = discovery.learn_from_articles(
+                        articles=articles,
+                        topic_name=topic_name,
+                        base_keywords=topic.keywords,
+                        min_occurrence=args.min_occurrence
+                    )
+
+                    print(f"  • {topic_name}: {count} new discoveries")
+                    total_discovered += count
+
+                    # Prune if requested
+                    if args.prune:
+                        pruned = discovery.prune_stale_discoveries(topic_name)
+                        if pruned > 0:
+                            print(f"    Pruned {pruned} stale discoveries")
+
+                print(f"\n✅ Discovery complete! Total new discoveries: {total_discovered}")
+
+            else:
+                # Discover for specific topic
+                if args.topic not in config.topics:
+                    print(f"❌ Topic '{args.topic}' not found!")
+                    return
+
+                topic = config.topics[args.topic]
+                articles = database.get_articles(limit=500)
+
+                print(f"\n🔍 Discovering keywords for topic: {args.topic}")
+                print(f"   Base keywords: {', '.join(topic.keywords[:5])}")
+
+                count = discovery.learn_from_articles(
+                    articles=articles,
+                    topic_name=args.topic,
+                    base_keywords=topic.keywords,
+                    min_occurrence=args.min_occurrence
+                )
+
+                print(f"\n✅ Discovered {count} new terms!")
+
+                # Show statistics
+                stats = discovery.get_discovery_stats(args.topic)
+                print(f"   Total discoveries: {stats['total_discovered']}")
+                print(f"   Average confidence: {stats['avg_confidence']}")
+
+                # Prune if requested
+                if args.prune:
+                    pruned = discovery.prune_stale_discoveries(args.topic)
+                    if pruned > 0:
+                        print(f"   Pruned {pruned} stale discoveries")
+
+        elif args.topic_command == 'stats':
+            # Show discovery statistics
+            discovery = create_topic_discovery(database)
+
+            if args.topic == 'all':
+                # Show stats for all topics
+                print("\n📊 Discovery Statistics for All Topics")
+                print("=" * 60)
+
+                for topic_name in sorted(config.list_topics()):
+                    stats = discovery.get_discovery_stats(topic_name)
+                    print(f"\n{topic_name}:")
+                    print(f"   Total discoveries: {stats['total_discovered']}")
+                    print(f"   Avg confidence: {stats['avg_confidence']}")
+                    if stats['last_updated']:
+                        print(f"   Last updated: {stats['last_updated']}")
+            else:
+                # Show stats for specific topic
+                if args.topic not in config.topics:
+                    print(f"❌ Topic '{args.topic}' not found!")
+                    return
+
+                stats = discovery.get_discovery_stats(args.topic)
+
+                print(f"\n📊 Discovery Statistics: {args.topic}")
+                print("=" * 60)
+                print(f"Total discoveries: {stats['total_discovered']}")
+                print(f"Average confidence: {stats['avg_confidence']}")
+                if stats['last_updated']:
+                    print(f"Last updated: {stats['last_updated']}")
+
+                # Get expanded keywords
+                topic = config.topics[args.topic]
+                expanded = discovery.get_expanded_keywords(
+                    args.topic,
+                    topic.keywords,
+                    min_confidence=topic.min_confidence,
+                    max_keywords=20
+                )
+
+                print(f"\n🔑 Expanded keywords (base + discovered):")
+                for i, kw in enumerate(expanded[:20], 1):
+                    discovered_marker = "✓" if kw not in topic.keywords else " "
+                    print(f"  {i}. [{discovered_marker}] {kw}")
+
+                if len(expanded) > 20:
+                    print(f"  ... and {len(expanded) - 20} more")
+
+        elif args.topic_command == 'suggest':
+            # Suggest related topics
+            if args.topic not in config.topics:
+                print(f"❌ Topic '{args.topic}' not found!")
+                return
+
+            discovery = create_topic_discovery(database)
+            topic = config.topics[args.topic]
+
+            suggestions = discovery.suggest_related_topics(args.topic, topic.keywords)
+
+            print(f"\n💡 Suggested Related Topics for '{args.topic}'")
+            print("=" * 60)
+
+            if suggestions:
+                for suggestion in suggestions:
+                    print(f"  • {suggestion}")
+                print("\n💡 Use 'ai-news topics add' to create these combinations")
+            else:
+                print("  No strong suggestions found yet.")
+                print("  Try running 'ai-news topics discover' first!")
+
+        else:
+            print("❌ Unknown topic command. Use --help to see available commands.")
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 def cmd_nlp_processing(args):
