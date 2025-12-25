@@ -191,6 +191,46 @@ class MigrationManager:
                     -- Create region index if it doesn't exist
                     CREATE INDEX IF NOT EXISTS idx_region ON articles(region);
                 """
+            },
+            4: {
+                "description": "Add dynamic feed discovery cache tables",
+                "sql": """
+                    -- Discovered feeds cache table
+                    CREATE TABLE IF NOT EXISTS discovered_feeds (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        topic VARCHAR(255) NOT NULL,
+                        feed_url TEXT NOT NULL,
+                        title TEXT,
+                        description TEXT,
+                        relevance_score REAL,
+                        intersection_score REAL,
+                        validated BOOLEAN DEFAULT 0,
+                        discovered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        last_updated TIMESTAMP,
+                        article_count INTEGER DEFAULT 0,
+                        UNIQUE(topic, feed_url)
+                    );
+                    
+                    -- Indexes for discovered_feeds
+                    CREATE INDEX IF NOT EXISTS idx_discovered_feeds_topic ON discovered_feeds(topic);
+                    CREATE INDEX IF NOT EXISTS idx_discovered_feeds_last_seen ON discovered_feeds(last_seen);
+                    CREATE INDEX IF NOT EXISTS idx_discovered_feeds_relevance ON discovered_feeds(relevance_score);
+                    
+                    -- Search queries tracking table (for learning)
+                    CREATE TABLE IF NOT EXISTS search_queries (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        query_text TEXT NOT NULL,
+                        search_engine VARCHAR(50),
+                        results_count INTEGER DEFAULT 0,
+                        success_rate REAL DEFAULT 0.0,
+                        last_used TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+                    
+                    -- Index for search_queries
+                    CREATE INDEX IF NOT EXISTS idx_search_queries_text ON search_queries(query_text);
+                    CREATE INDEX IF NOT EXISTS idx_search_queries_last_used ON search_queries(last_used);
+                """
             }
         }
     
@@ -250,6 +290,11 @@ class MigrationManager:
             tables.update({
                 "entities", "topics", "article_entities", "entity_mentions"
                 # "product_ideas", "competitive_analysis" removed - academic features
+            })
+        
+        if version >= 4:
+            tables.update({
+                "discovered_feeds", "search_queries"
             })
         
         return tables

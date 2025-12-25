@@ -155,6 +155,47 @@ class Config:
             return self.regions[region.lower()].feeds
         return []
     
+    def add_feed(self, region: str, name: str, url: str, category: str = "general", 
+                 ai_keywords: List[str] | None = None) -> bool:
+        """Add a new feed to a specific region."""
+        try:
+            # Validate region
+            region_code = region.lower()
+            if region_code not in self.regions:
+                # Create region if it doesn't exist
+                self.regions[region_code] = RegionConfig(name=region.title())
+            
+            # Check if feed already exists
+            existing_feeds = self.get_feeds_by_region(region_code)
+            for existing_feed in existing_feeds:
+                if existing_feed.url == url or existing_feed.name == name:
+                    return False  # Feed already exists
+            
+            # Create new feed
+            new_feed = FeedConfig(
+                name=name,
+                url=url,
+                category=category,
+                enabled=True,
+                ai_keywords=ai_keywords or []
+            )
+            
+            # Add to region
+            self.regions[region_code].feeds.append(new_feed)
+            
+            # Sync backward compatibility field
+            self.feeds = self.get_all_feeds()
+            
+            # Save configuration
+            if self.config_path:
+                self.save(self.config_path)
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error adding feed {name}: {e}")
+            return False
+    
     def get_enabled_regions(self) -> List[str]:
         """Get list of enabled region codes."""
         return [code for code, region in self.regions.items() if region.enabled]

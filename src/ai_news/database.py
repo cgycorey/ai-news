@@ -3,10 +3,13 @@
 import sqlite3
 import shutil
 import json
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -604,3 +607,164 @@ class Database:
                 "empty_articles": empty_articles,
                 "database_size_mb": round(db_size / (1024 * 1024), 2)
             }
+    
+    # ========== Feed Discovery Cache Methods ==========
+    
+    def check_feed_cache(self, topic: str, max_age_days: int = 7) -> List[Dict[str, Any]]:
+        """Check if topic has cached feeds within max_age_days.
+        
+        Args:
+            topic: Topic to search for
+            max_age_days: Maximum age of cache in days (default 7)
+        
+        Returns:
+            List of cached feed dicts, or empty list if not found/stale
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                query = """
+                    SELECT * FROM discovered_feeds
+                    WHERE topic = ? AND last_seen >= date('now', '-' || ? || ' days')
+                    ORDER BY relevance_score DESC
+                """
+                cursor = conn.execute(query, (topic, max_age_days))
+                rows = cursor.fetchall()
+                
+                return [dict(row) for row in rows]
+        except sqlite3.Error as e:
+            logger.error(f"Error checking feed cache: {e}")
+            return []
+    
+    def save_discovered_feeds(self, topic: str, feeds: List[Dict[str, Any]]) -> bool:
+        """Save discovered feeds to cache.
+        
+        Args:
+            topic: Topic name
+            feeds: List of feed dictionaries with keys: url, title, description,
+                   relevance_score, intersection_score, validated, article_count
+        
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                for feed in feeds:
+                    conn.execute("""
+                        INSERT OR REPLACE INTO discovered_feeds
+                        (topic, feed_url, title, description, relevance_score,
+                         intersection_score, validated, last_seen, article_count)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
+                    """, (
+                        topic,
+                        feed.get('url', ''),
+                        feed.get('title', ''),
+                        feed.get('description', ''),
+                        feed.get('relevance_score', 0.0),
+                        feed.get('intersection_score', 0.0),
+                        1 if feed.get('validated', False) else 0,
+                        feed.get('article_count', 0)
+                    ))
+                conn.commit()
+                return True
+        except sqlite3.Error as e:
+            logger.error(f"Error saving discovered feeds: {e}")
+            return False
+    
+    def mark_feed_accessed(self, topic: str) -> bool:
+        """Update last_seen timestamp for topic.
+        
+        Args:
+            topic: Topic name
+        
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute("""
+                    UPDATE discovered_feeds
+                    SET last_seen = CURRENT_TIMESTAMP
+                    WHERE topic = ?
+                """, (topic,))
+                conn.commit()
+                return True
+        except sqlite3.Error as e:
+            logger.error(f"Error marking feed accessed: {e}")
+            return False
+    
+    def clear_stale_feeds(self, days: int = 30) -> int:
+        """Remove feeds older than N days.
+        
+        Args:
+            days: Number of days after which feeds are considered stale
+        
+        Returns:
+            Number of feeds deleted
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.execute("""
+                    DELETE FROM discovered_feeds
+                    WHERE last_seen < date('now', '-' || ? || ' days')
+                """, (days,))
+                conn.commit()
+                return cursor.rowcount
+        except sqlite3.Error as e:
+            logger.error(f"Error clearing stale feeds: {e}")
+            return 0
+    
+    def get_cached_topics(self) -> List[str]:
+        """Get list of all cached topics.
+        
+        Returns:
+            List of unique topic names
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.execute("""
+                    SELECT DISTINCT topic FROM discovered_feeds
+                    ORDER BY last_seen DESC
+                """)
+                return [row[0] for row in cursor.fetchall()]
+        except sqlite3.Error as e:
+            logger.error(f"Error getting cached topics: {e}")
+            return []
+    
+    def get_feed_cache_stats(self) -> Dict[str, Any]:
+        """Get statistics about the feed cache.
+        
+        Returns:
+            Dict with cache statistics
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                # Total cached topics
+                total_topics = conn.execute("""
+                    SELECT COUNT(DISTINCT topic) FROM discovered_feeds
+                """).fetchone()[0]
+                
+                # Total cached feeds
+                total_feeds = conn.execute("SELECT COUNT(*) FROM discovered_feeds").fetchone()[0]
+                
+                # Fresh feeds (< 7 days)
+                fresh_feeds = conn.execute("""
+                    SELECT COUNT(*) FROM discovered_feeds
+                    WHERE last_seen >= date('now', '-7 days')
+                """).fetchone()[0]
+                
+                # Stale feeds (> 30 days)
+                stale_feeds = conn.execute("""
+                    SELECT COUNT(*) FROM discovered_feeds
+                    WHERE last_seen < date('now', '-30 days')
+                """).fetchone()[0]
+                
+                return {
+                    "total_cached_topics": total_topics,
+                    "total_cached_feeds": total_feeds,
+                    "fresh_feeds": fresh_feeds,
+                    "stale_feeds": stale_feeds
+                }
+        except sqlite3.Error as e:
+            logger.error(f"Error getting feed cache stats: {e}")
+            return {}

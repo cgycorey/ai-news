@@ -602,9 +602,21 @@ def main():
     show_parser.add_argument('article_id', type=int, help='Article ID to display')
     
     # Search command for web search
-    search_parser = subparsers.add_parser('websearch', help='Search web for AI + topic articles')
-    search_parser.add_argument('topic', help='Topic to search for with AI')
-    search_parser.add_argument('--limit', type=int, default=10, help='Number of articles to add')
+    search_parser = subparsers.add_parser('websearch', help='Search web for AI + topic articles with intersection detection')
+    search_parser.add_argument(
+        'topics', 
+        nargs='+',
+        help='One or more topics to search for with AI (e.g., "healthcare" or "healthcare" "finance")'
+    )
+    search_parser.add_argument('--limit', type=int, default=10, help='Max articles per topic')
+    search_parser.add_argument('--min-confidence', type=float, default=0.25,
+                              help='Minimum confidence for intersection detection (default: 0.25)')
+    search_parser.add_argument('--max-intersection-size', type=int, default=3,
+                              help='Maximum number of topics in an intersection (default: 3)')
+    search_parser.add_argument('--no-intersections', action='store_true',
+                              help='Skip intersection detection (individual topics only)')
+    search_parser.add_argument('--save', action='store_true',
+                              help='Automatically save articles without prompting')
     search_parser.add_argument('--trending', action='store_true', help='Search trending AI topics')
     
 
@@ -698,6 +710,46 @@ def main():
     feeds_remove_parser.add_argument('name', help='Feed name to remove')
     feeds_remove_parser.add_argument('--region', choices=['us', 'uk', 'eu', 'apac', 'global'], help='Region to remove from')
     
+    # Feed discovery commands for automatic RSS feed finding
+    add_topic_parser = subparsers.add_parser('add-topic', help='Automatically discover and add RSS feeds for a topic')
+    add_topic_parser.add_argument('topic', help='Topic name for feed discovery')
+    add_topic_parser.add_argument('--max-feeds', type=int, default=3, help='Maximum feeds to add')
+    add_topic_parser.add_argument('--preview', action='store_true', help='Preview feeds before adding')
+    add_topic_parser.add_argument('--dry-run', action='store_true', help='Show feeds without adding')
+    add_topic_parser.add_argument('--region', choices=['us', 'uk', 'eu', 'apac', 'global'], default='global', help='Target region')
+    
+    # Discover feeds command (assistance)
+    discover_feeds_parser = subparsers.add_parser('discover-feeds', help='Show how to find RSS feeds manually')
+    
+    # Search feeds command (discovery mode)
+    search_feeds_parser = subparsers.add_parser('search-feeds', help='Search for RSS feeds for a topic (discovery mode)')
+    search_feeds_parser.add_argument('topic', help='Topic to search RSS feed information for')
+
+    # Topic status command
+    topic_status_parser = subparsers.add_parser('topic-status', help='Show cache status for a topic')
+    topic_status_parser.add_argument('topic', help='Topic to check status for')
+
+    # Topic retry command
+    topic_retry_parser = subparsers.add_parser('topic-retry', help='Force re-discovery of a topic (skip cache)')
+    topic_retry_parser.add_argument('topic', help='Topic to re-discover')
+    topic_retry_parser.add_argument('--max-feeds', type=int, default=5, help='Maximum feeds to discover')
+
+    # Cache management command group
+    cache_parser = subparsers.add_parser('cache', help='Manage feed discovery cache')
+    cache_subparsers = cache_parser.add_subparsers(dest='cache_command', help='Cache operations')
+
+    # Cache list command
+    cache_list_parser = cache_subparsers.add_parser('list', help='List all cached topics')
+
+    # Cache clear command
+    cache_clear_parser = cache_subparsers.add_parser('clear', help='Clear all cached feeds')
+
+    # Cache stale command
+    cache_stale_parser = cache_subparsers.add_parser('stale', help='Show stale cache entries (>30 days)')
+
+    # Cache refresh command
+    cache_refresh_parser = cache_subparsers.add_parser('refresh', help='Re-discover stale topics')
+
     # Enhanced multi-keyword search command
     multi_parser = subparsers.add_parser('multi', help='Enhanced multi-keyword search with intersection scoring')
     multi_parser.add_argument('keywords', nargs='+', help='Keywords to search (e.g., ai insurance healthcare)')
@@ -749,7 +801,17 @@ def main():
     except Exception as e:
         print(f"Error loading configuration: {e}")
         return
-    
+
+    # Auto-migrate database if needed
+    from .migrations import get_database_migration_status, migrate_database
+    try:
+        migration_status = get_database_migration_status(str(db_path))
+        if migration_status['needs_migration']:
+            print(f"📦 Updating database schema (v{migration_status['current_version']} → v{migration_status['latest_version']})...")
+            migrate_database(str(db_path), backup_before=False)
+    except Exception as e:
+        logger.warning(f"Database migration check failed: {e}")
+
     # Execute command
     try:
         if args.command == 'collect':
@@ -1042,6 +1104,25 @@ def main():
         elif args.command == 'feeds':
             handle_feeds_command(args, config)
             
+        # Feed discovery commands
+        elif args.command == 'add-topic':
+            handle_add_topic_command(args, config, database)
+            
+        elif args.command == 'discover-feeds':
+            handle_discover_feeds_command()
+            
+        elif args.command == 'search-feeds':
+            handle_search_feeds_command(args)
+
+        elif args.command == 'topic-status':
+            handle_topic_status_command(args, database)
+
+        elif args.command == 'topic-retry':
+            handle_topic_retry_command(args, database)
+
+        elif args.command == 'cache':
+            handle_cache_command(args, database)
+
         # Enhanced multi-keyword commands (with lazy loading)
         elif args.command == 'multi':
             handle_multi_command(args, database)
@@ -1412,59 +1493,269 @@ def cmd_setup_nltk(args):
         sys.exit(1)
 
 
-# Web search command handler
+# Web search command handler with intersection detection
 def handle_websearch_command(args, database):
-    """Handle web search command for arbitrary topics."""
+    """
+    Handle web search command for single or multiple topics with intersection detection.
+
+    Usage:
+        ai-news websearch "healthcare"           # Single topic
+        ai-news websearch "healthcare" "finance"  # Two topics + intersection
+        ai-news websearch "ai" "robotics" "healthcare"  # Three topics + combos
+    """
     try:
-        print(f"🔍 Searching web for AI + '{args.topic}' articles...")
+        topics = args.topics
         
-        # Import search collector
+        # Display search plan header
+        print("\n" + "="*60)
+        print("🔍 AI NEWS WEB SEARCH WITH INTERSECTION DETECTION")
+        print("="*60)
+        print(f"📋 Topics: {', '.join(topics)}")
+        print(f"🎯 Max results per topic: {args.limit}")
+        print(f"📊 Min confidence: {args.min_confidence}")
+        
+        # Import required modules
         from .search_collector import SearchEngineCollector
+        from .intersection_optimization import create_intersection_optimizer
+        from .intersection_planner import (
+            plan_topic_searches,
+            format_search_summary,
+            estimate_total_searches
+        )
         
-        # Initialize search collector
+        # Initialize components
         search_collector = SearchEngineCollector(database)
-        print(f"✅ Search collector initialized")
+        optimizer = create_intersection_optimizer()
         
-        # Search for the topic
-        articles = search_collector.search_topic(args.topic, max_results=args.limit)
-        print(f"📊 Found {len(articles)} articles")
-        
-        if not articles:
-            print(f"❌ No articles found for 'AI + {args.topic}'")
-            print("💡 Try:")
-            print("   • Different topic keywords")
-            print("   • Broader search terms")
-            print("   • Check internet connection")
-            return
-        
-        # Display results
-        print(f"\n📰 Found {len(articles)} articles for 'AI + {args.topic}':")
-        print("-" * 80)
-        
-        for i, article in enumerate(articles, 1):
-            print(f"\n{i}. {article.title}")
-            print(f"   Source: {article.source_name}")
-            print(f"   URL: {article.url}")
-            if len(article.summary) > 200:
-                summary = article.summary[:200] + "..."
-            else:
-                summary = article.summary
-            print(f"   Summary: {summary}")
+        # Plan the searches
+        if args.no_intersections or len(topics) == 1:
+            # Individual topics only - use list-based tags
+            search_plans = [
+                {'search_type': 'individual', 'topics': [t], 
+                 'query': f'AI {t}', 'tags': ['AI', t]}
+                for t in topics
+            ]
+            print(f"📌 Mode: Individual topics only")
+        else:
+            # Generate intersection combinations
+            estimate = estimate_total_searches(len(topics), args.max_intersection_size)
+            print(f"🔗 Mode: Intersection detection enabled")
+            print(f"📊 Estimated searches: {estimate['total']}")
+            print(f"   • Individual: {estimate['individual']}")
+            print(f"   • Intersections: {estimate['intersections']}")
             
-            # Check AI relevance
-            ai_marker = "✓" if article.ai_relevant else "✗"
-            print(f"   AI Relevant: {ai_marker}")
+            search_plans = plan_topic_searches(
+                topics, 
+                max_intersection_size=args.max_intersection_size,
+                min_intersection_size=2
+            )
         
-        print(f"\n✅ Successfully collected articles for 'AI + {args.topic}'")
+        print()
+        print(format_search_summary(search_plans))
+        print()
+        
+        # Execute searches and collect results
+        all_results = []
+        total_articles = 0
+        
+        for i, plan in enumerate(search_plans, 1):
+            result = _execute_search_plan(
+                plan, i, len(search_plans),
+                search_collector, optimizer, database,
+                args.limit, args.min_confidence
+            )
+            all_results.append(result)
+            total_articles += result['count']
+        
+        # Display summary
+        _display_search_summary(all_results, total_articles, topics)
+        
+        # Save articles
+        saved_count = _save_articles(all_results, database, args.save)
+        
+        if saved_count > 0:
+            print(f"\n💡 You can now generate a digest with:")
+            topics_str = ' '.join(topics[:2])  # Show first 2 topics
+            print(f"   uv run python -m ai_news.cli digest --type topic --topic '{topics_str}' --days 1 --save")
         
     except KeyboardInterrupt:
         print("\n⚠️  Search interrupted by user")
     except Exception as e:
         print(f"❌ Search failed: {e}")
+        import traceback
+        traceback.print_exc()
         print("💡 This could be due to:")
         print("   • No internet connection")
         print("   • Search engine limitations")
         print("   • Rate limiting")
+
+
+def _execute_search_plan(
+    plan: dict,
+    index: int,
+    total: int,
+    search_collector,
+    optimizer,
+    database,
+    limit: int,
+    min_confidence: float
+) -> dict:
+    """Execute a single search plan and return results."""
+    topics_str = ' + '.join(plan['topics'])
+    tags = plan['tags']
+    tags_display = ', '.join(tags)
+    
+    print(f"[{index}/{total}] 🔍 Searching: [{tags_display}]")
+    print(f"   Query: {plan['query']}")
+    
+    # Perform search
+    try:
+        articles = search_collector.search_topic(
+            ' '.join(plan['topics']),
+            max_results=limit
+        )
+    except Exception as e:
+        print(f"   ⚠️  Search failed: {e}")
+        return {
+            'plan': plan,
+            'articles': [],
+            'count': 0,
+            'tags': tags,
+            'error': str(e)
+        }
+    
+    # Filter/validate intersections for multi-topic searches
+    if plan['search_type'] == 'intersection' and articles:
+        original_count = len(articles)
+        articles = _filter_intersection_articles(
+            articles, plan['topics'], optimizer, min_confidence
+        )
+        if original_count > 0:
+            print(f"   🔬 Intersection validation: {len(articles)}/{original_count} articles passed")
+    
+    # Tag articles with the tag list (store in ai_keywords_found)
+    for article in articles:
+        if not article.ai_keywords_found:
+            article.ai_keywords_found = []
+        # Add tags to the article
+        for tag in tags:
+            if tag not in article.ai_keywords_found:
+                article.ai_keywords_found.append(tag)
+        # Set category to a readable format
+        article.category = tags_display
+    
+    result = {
+        'plan': plan,
+        'articles': articles,
+        'count': len(articles),
+        'tags': tags
+    }
+    
+    print(f"   ✅ Found {len(articles)} articles for [{tags_display}]")
+    print()
+    
+    return result
+
+
+def _filter_intersection_articles(
+    articles,
+    topics: list,
+    optimizer,
+    min_confidence: float
+) -> list:
+    """Filter articles that match intersection criteria."""
+    filtered = []
+    
+    for article in articles:
+        article_data = {
+            'title': article.title,
+            'content': article.content or '',
+            'summary': article.summary
+        }
+        
+        # Check intersection
+        try:
+            intersection_result = optimizer.detect_weighted_intersections(
+                article_data, topics
+            )
+            
+            if (intersection_result['intersection_detected'] and 
+                intersection_result['confidence'] >= min_confidence):
+                # Add confidence as metadata
+                if not article.ai_keywords_found:
+                    article.ai_keywords_found = []
+                article.ai_keywords_found.append(
+                    f"intersection_confidence:{intersection_result['confidence']:.2f}"
+                )
+                filtered.append(article)
+        except Exception as e:
+            # If intersection detection fails, include article anyway
+            # (better to have false positives than miss good articles)
+            filtered.append(article)
+    
+    return filtered
+
+
+def _display_search_summary(all_results: list, total_articles: int, topics: list) -> None:
+    """Display a summary of all search results."""
+    print("\n" + "="*60)
+    print("                    COLLECTION SUMMARY")
+    print("="*60)
+    
+    individual_count = sum(
+        r['count'] for r in all_results 
+        if r['plan']['search_type'] == 'individual'
+    )
+    intersection_count = sum(
+        r['count'] for r in all_results 
+        if r['plan']['search_type'] == 'intersection'
+    )
+    
+    print(f"Search plans executed: {len(all_results)}")
+    print(f"Individual topic articles: {individual_count}")
+    print(f"Intersection articles: {intersection_count}")
+    print(f"Total articles collected: {total_articles}")
+    
+    # Show breakdown by tag
+    print("\n🏷️  Articles by tags:")
+    for result in all_results:
+        if result['count'] > 0:
+            tags_str = ', '.join(result['tags'])
+            print(f"  • [{tags_str}]: {result['count']} articles")
+    
+    print("="*60)
+
+
+def _save_articles(all_results: list, database, auto_save: bool = False) -> int:
+    """Save articles to database and return count saved."""
+    total_to_save = sum(r['count'] for r in all_results)
+    
+    if total_to_save == 0:
+        print("\n❌ No articles to save.")
+        return 0
+    
+    # Prompt for save if not auto-save
+    if not auto_save:
+        save_option = input(f"\n💾 Save {total_to_save} articles to database? (y/n): ").strip().lower()
+        if save_option != 'y':
+            print("Articles not saved.")
+            return 0
+    
+    # Save all articles
+    saved_count = 0
+    for result in all_results:
+        tags_str = ', '.join(result['tags'])
+        for article in result['articles']:
+            try:
+                if database.save_article(article):
+                    saved_count += 1
+            except Exception as e:
+                print(f"   ⚠️  Failed to save '{article.title[:50]}...': {e}")
+    
+    print(f"\n✅ Saved {saved_count}/{total_to_save} articles to database")
+    print(f"🏷️  Articles tagged with topic lists")
+    
+    return saved_count
 
 
 def _handle_arbitrary_multi_command(args, database):
@@ -1879,6 +2170,405 @@ def handle_demo_command(args, database):
         print(f"❌ Error during demo: {e}")
         import traceback
         traceback.print_exc()
+
+
+def handle_add_topic_command(args, config, database):
+    """Handle automatic feed discovery and addition for a topic."""
+    try:
+        print(f"🔍 Searching for {args.topic} RSS feeds...")
+        
+        # Import our feed discovery engine
+        from .feed_discovery import FeedDiscoveryEngine, NoFeedsFoundError
+        
+        discovery = FeedDiscoveryEngine(database)
+        
+        try:
+            feeds = discovery.discover_feeds_for_topic(args.topic, args.max_feeds)
+            
+            if not feeds:
+                print(f"❌ No RSS feeds found for '{args.topic}'")
+                print("💡 Try a different topic or add feeds manually:")
+                print(f"   uv run ai-news feeds add --name '{args.topic} Feed' --url 'RSS_URL'")
+                return
+            
+            print(f"\n📡 Found {len(feeds)} RSS feed(s) for '{args.topic}':")
+            
+            # Show discovered feeds
+            for i, feed in enumerate(feeds, 1):
+                print(f"{i}. {feed['title']}")
+                print(f"   🔗 {feed['url']}")
+                print(f"   📊 Relevance: {feed['relevance_score']:.0%}")
+                print(f"   📰 {feed['article_count']} articles")
+                print()
+            
+            if args.preview or args.dry_run:
+                print("📰 Preview recent articles:")
+                for i, feed in enumerate(feeds[:2], 1):  # Show max 2 feeds
+                    print(f"\n{feed['title']} (showing 3 recent articles):")
+                    try:
+                        from .feed_discovery import FeedValidator
+                        validator = FeedValidator()
+                        articles = validator.get_feed_preview(feed['url'], 3)
+                        for j, article in enumerate(articles, 1):
+                            print(f"   {j}. {article['title']}")
+                    except Exception:
+                        print(f"   ⚠️  Could not fetch articles")
+                print()
+            
+            if args.dry_run:
+                print("🔍 Dry run complete - no feeds were added")
+                return
+            
+            # Add feeds to configuration
+            added_count = 0
+            
+            for feed in feeds:
+                try:
+                    # Add to specified region
+                    feed_name = f"{args.topic.title()} - {feed['title']}"
+                    success = config.add_feed(
+                        region=args.region,
+                        name=feed_name,
+                        url=feed['url'],
+                        category=args.topic.lower(),
+                        ai_keywords=args.topic.split() + ['AI', 'artificial intelligence']
+                    )
+                    
+                    if success:
+                        added_count += 1
+                        print(f"✅ Added: {feed_name}")
+                    else:
+                        print(f"⚠️  Feed already exists: {feed_name}")
+                        
+                except Exception as e:
+                    print(f"❌ Failed to add {feed['title']}: {e}")
+            
+            print(f"\n🎉 Successfully added {added_count}/{len(feeds)} feeds for '{args.topic}'")
+            
+            # Collect articles from new feeds
+            if added_count > 0:
+                print("📥 Collecting articles from new feeds...")
+                from .collector import SimpleCollector
+                collector = SimpleCollector(database)
+                stats = collector.collect_region(config, args.region)
+                
+                # Test if topic works now
+                print(f"🧪 Testing search for '{args.topic}':")
+                articles = database.search_articles(args.topic, limit=3)
+                if articles:
+                    for i, article in enumerate(articles, 1):
+                        print(f"{i}. {article.title}")
+                else:
+                    print("   No articles found yet - try again after the next collection cycle")
+                
+                print(f"\n📊 Collection Summary:")
+                print(f"   Feeds processed: {stats['feeds_processed']}")
+                print(f"   Articles added: {stats['total_added']}")
+                print(f"   AI-relevant added: {stats['ai_relevant_added']}")
+        
+        except NoFeedsFoundError as e:
+            print(f"❌ {e}")
+            print("\n💡 Tips for finding RSS feeds:")
+            
+            # Check if we have related topics
+            topic_lower = args.topic.lower()
+            related_topics = []
+            
+            topic_suggestions = {
+                'llm': ['artificial intelligence', 'technology', 'machine learning'],
+                'large language model': ['artificial intelligence', 'technology', 'machine learning'],
+                'insurance': ['fintech', 'finance', 'technology'],
+                'healthcare it': ['healthcare', 'technology', 'fintech'],
+                'crypto': ['blockchain', 'fintech', 'technology'],
+                'sustainability': ['renewable energy', 'technology', 'environment'],
+                'cybersecurity': ['technology', 'security', 'fintech']
+            }
+            
+            for keyword, suggestions in topic_suggestions.items():
+                if keyword in topic_lower:
+                    related_topics.extend(suggestions)
+                    break
+            
+            if related_topics:
+                print("🎯 Try these related topics that have known feeds:")
+                for topic in related_topics[:3]:
+                    print(f"   • uv run ai-news add-topic '{topic}' --dry-run")
+                print()
+            
+            print("🔍 Manual feed discovery guide:")
+            print(f"1. Google: '{args.topic} RSS feed' or '{args.topic} blog feed'")
+            print("2. Look for RSS icons (🟠) on industry websites")
+            print("3. Check industry publications and blogs")
+            print()
+            print("✅ Add manually once found:")
+            print(f"   uv run ai-news feeds add --name '{args.topic.title()} Blog' --url 'RSS_URL'")
+            print()
+            print("🛠️  Get help with discovery:")
+            print("   uv run ai-news discover-feeds")  # For manual guidance
+            print(f"   uv run ai-news search-feeds '{args.topic}'  # Search feed info")
+    
+    except Exception as e:
+        print(f"❌ Error discovering feeds: {e}")
+        print("💡 You can still add feeds manually:")
+        print(f"   uv run ai-news feeds add --name '{args.topic} Feed' --url 'RSS_URL'")
+
+
+def handle_discover_feeds_command():
+    """Show assistance for manually finding RSS feeds."""
+    print("🔍 How to find RSS feeds manually:")
+    print()
+    print("1. Search Google: '[your topic] RSS feed'")
+    print("   Example: 'quantum computing RSS feed'")
+    print()
+    print("2. Look for RSS links on websites:")
+    print("   🟠 RSS icon in browser")
+    print("   🔗 Links ending in /rss, /feed, or .xml")
+    print()
+    print("3. Popular RSS directories:")
+    print("   • Feedspot: https://blog.feedspot.com/")
+    print("   • Feedly: https://feedly.com/")
+    print("   • Inoreader: https://www.inoreader.com/")
+    print()
+    print("4. Example manual addition:")
+    print("   uv run ai-news feeds add ")
+    print("     --name 'Quantum Computing News' ")
+    print("     --url 'https://example.com/quantum-rss.xml' ")
+    print("     --category quantum --ai-keywords 'quantum,AI'")
+    print()
+    print("💡 Or use automatic discovery:")
+    print("   uv run ai-news add-topic 'your-topic'")
+
+
+def handle_search_feeds_command(args):
+    """Search for RSS feed information for a topic (discovery mode)."""
+    print(f"🔍 Searching for {args.topic} RSS feed information...")
+    print("💡 This shows where to find feeds - not automatic addition")
+    print()
+    
+    # Use existing websearch to find RSS feed information  
+    from .search_collector import SearchEngineCollector
+    from .database import Database
+    
+    # Create a temporary database instance for search
+    db_path = 'data/production/ai_news.db'
+    temp_db = Database(db_path)
+    searcher = SearchEngineCollector(temp_db)
+    
+    search_queries = [
+        f"{args.topic} RSS feed",
+        f"best {args.topic} news sources RSS",
+        f"{args.topic} news aggregator feed"
+    ]
+    
+    for i, query in enumerate(search_queries, 1):
+        try:
+            print(f"📋 Results {i}: {query}")
+            # Use SearXNG for better search results
+            search_results = searcher.search_searxng(query, max_results=3)
+            
+            if search_results:
+                for result in search_results:
+                    title = result.get('title', 'No title')
+                    content = result.get('content', 'No description')
+                    url = result.get('url', 'No URL')
+                    engine = result.get('engine', ['unknown'])
+                    print(f"   🔗 {title}")
+                    print(f"   📍 {url}")
+                    print(f"   💡 {content[:150]}...")
+                    print(f"   🔍 Source: {', '.join(engine)}")
+                    print()
+            else:
+                print("   No results found")
+                print()
+            
+            if i < len(search_queries):
+                print("-" * 50)
+        
+        except Exception as e:
+            print(f"   ⚠️  Search error: {e}")
+            print()
+    
+    # Auto-discover feeds from promising results
+    print("\n🔍 Auto-discovering RSS feeds from promising results...")
+    from .feed_discovery import FeedDiscoveryEngine
+    from .database import Database
+    
+    try:
+        db = Database('data/production/ai_news.db')
+        discovery = FeedDiscoveryEngine(db)
+        
+        all_feeds = set()
+        # Re-run search to get URLs for discovery
+        for query in search_queries[:1]:  # Just check first query
+            search_results = searcher.search_searxng(query, max_results=5)
+            for result in search_results:
+                url = result.get('url', '')
+                title = result.get('title', '')
+                content = result.get('content', '')
+                
+                if discovery._is_promising_feed_directory(url, title, content):
+                    print(f"📂 Exploring: {title} ({url})")
+                    discovered = discovery._discover_feeds_from_page(url)
+                    all_feeds.update(discovered[:3])  # Just show first 3 per source
+    
+        if all_feeds:
+            print(f"\n✅ Found {len(all_feeds)} RSS feeds:")
+            for i, feed in enumerate(list(all_feeds)[:5], 1):  # Show first 5
+                print(f"   {i}. {feed}")
+                
+            print(f"\n💡 Add them like this:")
+            feeds_list = list(all_feeds)
+            print(f"   uv run ai-news feeds add --name '{args.topic.title()} Feed 1' --url '{feeds_list[0]}'")
+            if len(feeds_list) > 1:
+                print(f"   uv run ai-news feeds add --name '{args.topic.title()} Feed 2' --url '{feeds_list[1]}'")
+        else:
+            print("\n😔 No RSS feeds found in the search results")
+            
+    except Exception as e:
+        print(f"\n❌ Auto-discovery failed: {e}")
+    
+    print("\n💡 Manual addition:")
+    print(f"   uv run ai-news feeds add --name '{args.topic} News' --url 'FEED_URL'")
+    print()
+    print("🚀 Or try automatic discovery:")
+    print(f"   uv run ai-news add-topic '{args.topic}'")
+
+
+def handle_topic_status_command(args, database):
+    """Show cache status for a topic."""
+    from .feed_discovery import FeedDiscoveryEngine
+
+    print(f"\n📊 Checking cache status for: {args.topic}")
+
+    engine = FeedDiscoveryEngine(database=database)
+
+    if engine.cache.is_cache_fresh(args.topic):
+        print(f"✅ Topic '{args.topic}' is cached and fresh")
+
+        feeds = engine.cache.check_cache(args.topic)
+        if feeds:
+            print(f"\n📰 Cached feeds: {len(feeds)}")
+
+            for feed in feeds:
+                emoji = "🟢" if feed['relevance_score'] >= 0.7 else "🟡" if feed['relevance_score'] >= 0.4 else "🟠"
+                print(f"{emoji} {feed['title']} ({feed['article_count']} articles)")
+    else:
+        print(f"❌ Topic '{args.topic}' is not cached or cache is stale")
+        print(f"💡 Run 'ai-news topic-retry \"{args.topic}\"' to discover feeds")
+
+
+def handle_topic_retry_command(args, database):
+    """Force re-discovery of a topic (skip cache)."""
+    from .feed_discovery import FeedDiscoveryEngine, NoFeedsFoundError
+
+    print(f"\n🔄 Re-discovering feeds for '{args.topic}'...")
+
+    engine = FeedDiscoveryEngine(database=database)
+
+    try:
+        feeds = engine.discover_feeds_for_topic(args.topic, max_feeds=args.max_feeds, force_discovery=True)
+
+        print(f"\n✅ Found {len(feeds)} feeds for '{args.topic}'\n")
+
+        for feed in feeds:
+            emoji = "🟢" if feed['relevance_score'] >= 0.7 else "🟡" if feed['relevance_score'] >= 0.4 else "🟠"
+            print(f"{emoji} {feed['title']}")
+            print(f"   {feed['article_count']} articles • {feed['url']}")
+
+        print(f"\n💾 Cache updated")
+
+    except NoFeedsFoundError:
+        print(f"\n❌ No feeds found for '{args.topic}'")
+        print(f"\n💡 Suggestions:")
+        print(f"   → Try a broader topic")
+        print(f"   → Try related terms")
+        print(f"   → Check spelling")
+    except Exception as e:
+        print(f"\n❌ Error: {e}")
+
+
+def handle_cache_command(args, database):
+    """Handle cache management commands."""
+    import sqlite3
+    from .feed_discovery import FeedDiscoveryEngine
+
+    engine = FeedDiscoveryEngine(database=database)
+
+    if args.cache_command == 'list':
+        topics = engine.cache.get_all_cached_topics()
+
+        if not topics:
+            print("No cached topics")
+            return
+
+        print(f"\n💾 Cached topics ({len(topics)}):\n")
+
+        for topic in topics:
+            is_fresh = engine.cache.is_cache_fresh(topic)
+            status = "✅ Fresh" if is_fresh else "⚠️  Stale"
+            print(f"{status}: {topic}")
+
+    elif args.cache_command == 'clear':
+        print("\n⚠️  This will clear all cached feeds.")
+        response = input("Are you sure? (yes/no): ").lower().strip()
+
+        if response not in ['yes', 'y']:
+            print("Cancelled")
+            return
+
+        # Delete all from discovered_feeds
+        with sqlite3.connect(database.db_path) as conn:
+            conn.execute("DELETE FROM discovered_feeds")
+
+        print("🧹 Cache cleared")
+
+    elif args.cache_command == 'stale':
+        # Get stale entries
+        with sqlite3.connect(database.db_path) as conn:
+            stale = conn.execute("""
+                SELECT DISTINCT topic FROM discovered_feeds
+                WHERE last_seen < date('now', '-30 days')
+            """).fetchall()
+
+        if not stale:
+            print("✅ No stale entries")
+            return
+
+        print(f"\n⚠️  Stale entries ({len(stale)}):\n")
+
+        for row in stale:
+            print(f"   {row[0]}")
+
+        print(f"\n💡 Run 'ai-news cache refresh' to update")
+
+    elif args.cache_command == 'refresh':
+        # Get stale entries
+        with sqlite3.connect(database.db_path) as conn:
+            stale = conn.execute("""
+                SELECT DISTINCT topic FROM discovered_feeds
+                WHERE last_seen < date('now', '-30 days')
+            """).fetchall()
+
+        if not stale:
+            print("✅ No stale entries to refresh")
+            return
+
+        print(f"\n🔄 Refreshing {len(stale)} stale topics...\n")
+
+        for row in stale:
+            topic = row[0]
+            print(f"Refreshing: {topic}")
+
+            try:
+                feeds = engine.discover_feeds_for_topic(topic, force_discovery=True)
+                print(f"✅ Found {len(feeds)} feeds\n")
+            except Exception as e:
+                print(f"❌ Failed: {e}\n")
+
+        print("✅ Refresh complete")
+
+    else:
+        print("❌ Unknown cache command. Use --help to see available commands.")
 
 
 if __name__ == '__main__':
