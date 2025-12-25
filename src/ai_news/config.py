@@ -104,6 +104,90 @@ class RegionConfig:
 
 
 @dataclass
+class TopicConfig:
+    """Configuration for a single topic with dynamic discovery."""
+    name: str
+    keywords: List[str] = field(default_factory=list)
+    auto_discover: bool = True
+    min_confidence: float = 0.3
+    max_keywords: int = 50
+    discovered_keywords: List[str] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "name": self.name,
+            "keywords": self.keywords,
+            "auto_discover": self.auto_discover,
+            "min_confidence": self.min_confidence,
+            "max_keywords": self.max_keywords,
+            "discovered_keywords": self.discovered_keywords
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'TopicConfig':
+        return cls(
+            name=data.get('name', ''),
+            keywords=data.get('keywords', []),
+            auto_discover=data.get('auto_discover', True),
+            min_confidence=data.get('min_confidence', 0.3),
+            max_keywords=data.get('max_keywords', 50),
+            discovered_keywords=data.get('discovered_keywords', [])
+        )
+
+
+@dataclass
+class DiscoveryConfig:
+    """Configuration for topic discovery system."""
+    enabled: bool = True
+    min_occurrence: int = 3
+    prune_days: int = 30
+    min_confidence: float = 0.2
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "enabled": self.enabled,
+            "min_occurrence": self.min_occurrence,
+            "prune_days": self.prune_days,
+            "min_confidence": self.min_confidence
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'DiscoveryConfig':
+        return cls(
+            enabled=data.get('enabled', True),
+            min_occurrence=data.get('min_occurrence', 3),
+            prune_days=data.get('prune_days', 30),
+            min_confidence=data.get('min_confidence', 0.2)
+        )
+
+
+@dataclass
+class TopicCombinationConfig:
+    """Configuration for topic intersections/combinations."""
+    name: str
+    topics: List[str] = field(default_factory=list)
+    min_confidence: float = 0.3
+    region: str = "global"
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "name": self.name,
+            "topics": self.topics,
+            "min_confidence": self.min_confidence,
+            "region": self.region
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'TopicCombinationConfig':
+        return cls(
+            name=data.get('name', ''),
+            topics=data.get('topics', []),
+            min_confidence=data.get('min_confidence', 0.3),
+            region=data.get('region', 'global')
+        )
+
+
+@dataclass
 class Config:
     """Main application configuration."""
     database_path: str = "data/production/ai_news.db"
@@ -113,6 +197,11 @@ class Config:
     collection_interval_hours: int = 6
     schedule: ScheduleConfig = field(default_factory=ScheduleConfig)
     config_path: Optional[Path] = field(default=None, init=False)
+
+    # New topic-related fields
+    topics: Dict[str, TopicConfig] = field(default_factory=dict)
+    topic_combinations: Dict[str, TopicCombinationConfig] = field(default_factory=dict)
+    discovery: DiscoveryConfig = field(default_factory=DiscoveryConfig)
     
     def __post_init__(self):
         # Initialize default regions if empty
@@ -200,6 +289,78 @@ class Config:
         """Get list of enabled region codes."""
         return [code for code, region in self.regions.items() if region.enabled]
 
+    def get_topic_keywords(self, topic_name: str, discovered_keywords: Optional[List[str]] = None) -> List[str]:
+        """
+        Get base keywords for a topic, optionally combined with discovered keywords.
+
+        Args:
+            topic_name: Name of the topic
+            discovered_keywords: List of discovered keywords from database (optional)
+
+        Returns:
+            List of base + discovered keywords (deduplicated)
+        """
+        if topic_name not in self.topics:
+            return []
+
+        topic = self.topics[topic_name]
+        base_keywords = topic.keywords.copy()
+
+        # Add discovered keywords if provided
+        if discovered_keywords:
+            # Combine and deduplicate
+            seen = {kw.lower() for kw in base_keywords}
+            for kw in discovered_keywords:
+                if kw.lower() not in seen:
+                    base_keywords.append(kw)
+                    seen.add(kw.lower())
+
+        return base_keywords[:topic.max_keywords]
+
+    def add_topic(self, name: str, keywords: List[str], auto_discover: bool = True) -> TopicConfig:
+        """Add a new topic or update existing."""
+        if name in self.topics:
+            # Update existing
+            self.topics[name].keywords.extend(keywords)
+            self.topics[name].keywords = list(set(self.topics[name].keywords))
+        else:
+            # Create new
+            self.topics[name] = TopicConfig(
+                name=name,
+                keywords=keywords,
+                auto_discover=auto_discover
+            )
+
+        # Save if config path set
+        if self.config_path:
+            self.save(self.config_path)
+
+        return self.topics[name]
+
+    def remove_topic(self, name: str) -> bool:
+        """Remove a topic."""
+        if name in self.topics:
+            del self.topics[name]
+
+            # Also remove any combinations that use this topic
+            to_remove = [
+                combo_name for combo_name, combo in self.topic_combinations.items()
+                if name in combo.topics
+            ]
+            for combo_name in to_remove:
+                del self.topic_combinations[combo_name]
+
+            # Save if config path set
+            if self.config_path:
+                self.save(self.config_path)
+
+            return True
+        return False
+
+    def list_topics(self) -> List[str]:
+        """Get list of all topic names."""
+        return list(self.topics.keys())
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert Config to dictionary."""
         result = {
@@ -208,14 +369,25 @@ class Config:
             "max_articles_per_feed": self.max_articles_per_feed,
             "collection_interval_hours": self.collection_interval_hours,
         }
-        
+
         # Include feeds for backward compatibility
         all_feeds = self.get_all_feeds()
         if all_feeds:
             result["feeds"] = [feed.to_dict() for feed in all_feeds]
-        
+
         if self.schedule:
             result['schedule'] = self.schedule.to_dict()
+
+        # Include topics configuration
+        if self.topics:
+            result["topics"] = {name: topic.to_dict() for name, topic in self.topics.items()}
+
+        if self.topic_combinations:
+            result["topic_combinations"] = {name: combo.to_dict() for name, combo in self.topic_combinations.items()}
+
+        if self.discovery:
+            result["discovery"] = self.discovery.to_dict()
+
         return result
 
     @classmethod
@@ -255,19 +427,38 @@ class Config:
         
         schedule_data = data.get('schedule', {})
         schedule = ScheduleConfig.from_dict(schedule_data)
-        
+
+        # Load topics
+        topics_data = data.get('topics', {})
+        topics = {}
+        for topic_name, topic_data in topics_data.items():
+            topics[topic_name] = TopicConfig.from_dict(topic_data)
+
+        # Load topic combinations
+        combinations_data = data.get('topic_combinations', {})
+        combinations = {}
+        for combo_name, combo_data in combinations_data.items():
+            combinations[combo_name] = TopicCombinationConfig.from_dict(combo_data)
+
+        # Load discovery config
+        discovery_data = data.get('discovery', {})
+        discovery = DiscoveryConfig.from_dict(discovery_data)
+
         config = cls(
             database_path=data.get('database_path', 'data/production/ai_news.db'),
             regions=regions,
             max_articles_per_feed=data.get('max_articles_per_feed', 50),
             collection_interval_hours=data.get('collection_interval_hours', 6),
-            schedule=schedule
+            schedule=schedule,
+            topics=topics,
+            topic_combinations=combinations,
+            discovery=discovery
         )
         config.config_path = config_path
-        
+
         # Update feeds field for backward compatibility
         config.feeds = config.get_all_feeds()
-        
+
         return config
 
     def save(self, config_path: Optional[Path] = None):
@@ -286,7 +477,7 @@ class Config:
 
     @staticmethod
     def _create_default() -> 'Config':
-        """Create default configuration with sample feeds."""
+        """Create default configuration with sample feeds and topics."""
         default_feeds = [
             FeedConfig(
                 name="TechCrunch AI",
@@ -321,16 +512,61 @@ class Config:
                 ai_keywords=["AI", "artificial intelligence", "machine learning", "OpenAI", "GPT"]
             ),
         ]
-        
+
         # Create regions with default feeds in global region
         regions = {
             'global': RegionConfig(name='Global', feeds=default_feeds),
             'us': RegionConfig(name='United States'),
-            'uk': RegionConfig(name='United Kingdom'), 
+            'uk': RegionConfig(name='United Kingdom'),
             'eu': RegionConfig(name='European Union'),
             'apac': RegionConfig(name='Asia-Pacific')
         }
-        
-        config = Config(regions=regions)
+
+        # Create default topics
+        topics = {
+            'AI': TopicConfig(
+                name='AI',
+                keywords=['AI', 'artificial intelligence', 'machine learning', 'deep learning', 'LLM', 'GPT'],
+                auto_discover=True
+            ),
+            'Healthcare': TopicConfig(
+                name='Healthcare',
+                keywords=['healthcare', 'medical', 'clinical', 'hospital', 'patient care'],
+                auto_discover=True
+            ),
+            'Finance': TopicConfig(
+                name='Finance',
+                keywords=['finance', 'banking', 'fintech', 'trading', 'investment'],
+                auto_discover=True
+            ),
+            'Insurance': TopicConfig(
+                name='Insurance',
+                keywords=['insurance', 'insurtech', 'underwriting', 'claims', 'risk'],
+                auto_discover=True
+            )
+        }
+
+        # Create default topic combinations
+        combinations = {
+            'ai_insurance': TopicCombinationConfig(
+                name='AI+Insurance',
+                topics=['AI', 'Insurance'],
+                min_confidence=0.3,
+                region='global'
+            ),
+            'ai_healthcare': TopicCombinationConfig(
+                name='AI+Healthcare',
+                topics=['AI', 'Healthcare'],
+                min_confidence=0.3,
+                region='global'
+            )
+        }
+
+        config = Config(
+            regions=regions,
+            topics=topics,
+            topic_combinations=combinations,
+            discovery=DiscoveryConfig()
+        )
         config.feeds = config.get_all_feeds()
         return config

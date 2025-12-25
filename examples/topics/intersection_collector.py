@@ -19,7 +19,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 # Add src to path for imports
-sys.path.insert(0, str(Path(__file__).parent / "src"))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
 from ai_news.config import Config
 from ai_news.database import Database
@@ -27,56 +27,26 @@ from ai_news.collector import SimpleCollector
 from ai_news.intersection_optimization import create_intersection_optimizer
 from ai_news.search_collector import SearchEngineCollector
 
-
-# Predefined topic intersection presets
-TOPIC_PRESETS = {
-    "AI+Healthcare": {
-        "topics": ["AI", "Healthcare", "Medical", "Machine Learning"],
-        "description": "AI applications in healthcare and medical diagnosis",
-        "min_confidence": 0.3
-    },
-    "AI+Finance": {
-        "topics": ["AI", "Finance", "Banking", "Fintech", "Trading"],
-        "description": "AI applications in financial services and trading",
-        "min_confidence": 0.3
-    },
-    "Blockchain+Finance": {
-        "topics": ["Blockchain", "Cryptocurrency", "Finance", "Banking"],
-        "description": "Blockchain and cryptocurrency in financial services",
-        "min_confidence": 0.25
-    },
-    "AI+Automotive": {
-        "topics": ["AI", "Autonomous", "Self-driving", "Automotive", "Cars"],
-        "description": "AI in autonomous vehicles and automotive industry",
-        "min_confidence": 0.3
-    },
-    "AI+Education": {
-        "topics": ["AI", "Education", "Learning", "EdTech", "Students"],
-        "description": "AI applications in education and learning systems",
-        "min_confidence": 0.25
-    },
-    "Cybersecurity+AI": {
-        "topics": ["Cybersecurity", "AI", "Security", "Threat Detection"],
-        "description": "AI applications in cybersecurity and threat detection",
-        "min_confidence": 0.3
-    }
-}
-
-
 class TopicIntersectionCollector:
     """Collect news articles based on topic intersections."""
-    
-    def __init__(self, db_path: str = "ai_news.db"):
+
+    def __init__(self, db_path: str = "ai_news.db", config_path: str | None = None):
         """Initialize the topic intersection collector."""
-        self.config = Config()
+        if config_path:
+            self.config = Config.load(Path(config_path))
+        else:
+            # Load from default project location
+            default_path = Path(__file__).parent.parent.parent / "config.json"
+            self.config = Config.load(default_path)
+
         self.database = Database(db_path)
         self.collector = SimpleCollector(self.database)
         self.search_collector = SearchEngineCollector(self.database)
         self.optimizer = create_intersection_optimizer()
-        
+
         print("🐶 Topic Intersection Collector initialized!")
         print(f"   Database: {db_path}")
-        print(f"   Available presets: {len(TOPIC_PRESETS)}")
+        print(f"   Available combinations: {len(self.config.topic_combinations)}")
     
     def collect_topic_intersections(
         self, 
@@ -213,11 +183,11 @@ class TopicIntersectionCollector:
         # Fallback to RSS feeds if search fails
         if not use_search:
             # Collect from all feeds and filter for intersections
-            feed_configs = self.config.get_feed_configs()
+            feed_configs = self.config.get_all_feeds()
             feed_stats = self.collector.collect_all_feeds(feed_configs)
             
             # Get recent articles and check for intersections
-            recent_articles = self.database.get_recent_articles(days=1, limit=100)
+            recent_articles = self.database.get_articles(limit=100, ai_only=True)
             
             for article in recent_articles:
                 article_data = {
@@ -346,22 +316,29 @@ class TopicIntersectionCollector:
         print(f"\n✨ Collection completed at: {results['collection_time']}")
 
 
-def parse_topic_groups(args) -> List[List[str]]:
+def parse_topic_groups(args, config: Config) -> List[List[str]]:
     """Parse topic groups from command line arguments."""
     topic_groups = []
-    
+
     # Handle preset configurations
     if hasattr(args, 'preset') and args.preset:
         for preset_name in args.preset:
-            if preset_name in TOPIC_PRESETS:
-                preset = TOPIC_PRESETS[preset_name]
-                topic_groups.append(preset["topics"])
-                print(f"✅ Using preset: {preset_name}")
-                print(f"   {preset['description']}")
+            # Find combination by name or key
+            combination = None
+            for key, combo in config.topic_combinations.items():
+                if combo.name == preset_name or key == preset_name:
+                    combination = combo
+                    break
+
+            if combination:
+                topic_groups.append(combination.topics)
+                print(f"✅ Using combination: {combination.name}")
+                print(f"   Topics: {' + '.join(combination.topics)}")
             else:
-                print(f"⚠️  Unknown preset: {preset_name}")
-                print(f"   Available presets: {', '.join(TOPIC_PRESETS.keys())}")
-    
+                print(f"⚠️  Unknown combination: {preset_name}")
+                available = [c.name for c in config.topic_combinations.values()]
+                print(f"   Available combinations: {', '.join(available)}")
+
     # Handle custom topic combinations
     if hasattr(args, 'topics') and args.topics:
         for topic_string in args.topics:
@@ -371,20 +348,20 @@ def parse_topic_groups(args) -> List[List[str]]:
                 print(f"✅ Custom topic group: {' + '.join(topics)}")
             else:
                 print(f"⚠️  Need at least 2 topics for intersection: {topic_string}")
-    
+
     return topic_groups
 
 
-def list_presets():
-    """List all available topic presets."""
-    print("\n🎯 Available Topic Intersection Presets:")
+def list_presets(config: Config):
+    """List all available topic combinations."""
+    print("\n🎯 Available Topic Intersection Combinations:")
     print("="*50)
-    
-    for name, preset in TOPIC_PRESETS.items():
-        print(f"\n{name}:")
-        print(f"   Description: {preset['description']}")
-        print(f"   Topics: {' + '.join(preset['topics'])}")
-        print(f"   Min confidence: {preset['min_confidence']}")
+
+    for key, combination in config.topic_combinations.items():
+        print(f"\n{combination.name}:")
+        print(f"   Topics: {' + '.join(combination.topics)}")
+        print(f"   Min confidence: {combination.min_confidence}")
+        print(f"   Region: {combination.region}")
 
 
 def main():
@@ -453,26 +430,30 @@ Examples:
     )
     
     args = parser.parse_args()
-    
+
+    # Load config from project root
+    config_path = Path(__file__).parent.parent.parent / "config.json"
+    config = Config.load(config_path)
+
     # Handle list presets
     if args.list_presets:
-        list_presets()
+        list_presets(config)
         return
-    
+
     # Validate arguments
     if not args.preset and not args.topics:
         print("❌ Please specify either --preset or --topics")
         print("   Use --list-presets to see available configurations")
         parser.print_help()
         return
-    
+
     # Parse topic groups
-    topic_groups = parse_topic_groups(args)
-    
+    topic_groups = parse_topic_groups(args, config)
+
     if not topic_groups:
         print("❌ No valid topic groups specified")
         return
-    
+
     # Initialize collector
     collector = TopicIntersectionCollector(args.db_path)
     
