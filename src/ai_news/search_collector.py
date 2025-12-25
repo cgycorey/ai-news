@@ -22,7 +22,12 @@ class SearchEngineCollector:
     def __init__(self, database: Database):
         self.database = database
         self.headers = {
-            'User-Agent': 'Mozilla/5.0 (compatible; AI-News-Collector/1.0)'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            # Note: Removed Accept-Encoding to avoid gzip responses that urllib doesn't auto-decompress
+            'DNT': '1',
+            'Connection': 'keep-alive'
         }
         # Track page fetches to avoid excessive requests
         self._page_fetch_count = 0
@@ -52,37 +57,29 @@ class SearchEngineCollector:
             from bs4 import BeautifulSoup
             soup = BeautifulSoup(html_content, 'html.parser')
             results = []
-            
-            # Find all result blocks
+
+            # Find all result blocks (new DDG structure)
             result_blocks = soup.find_all('div', class_='result')
-            
+
             for result in result_blocks[:max_results]:
-                # Extract title
-                title_elem = result.find('a', class_='result__a')
-                title = title_elem.get_text().strip() if title_elem else ''
-                
-                # Extract URL
-                url_elem = result.find('a', class_='result__a')
-                url = url_elem.get('href') if url_elem else ''
-                
-                # Extract snippet
+                # Extract title from h2 with class result__title
+                title_elem = result.find('h2', class_='result__title')
+                if not title_elem:
+                    continue
+
+                link_elem = title_elem.find('a', class_='result__a')
+                if not link_elem:
+                    continue
+
+                title = link_elem.get_text().strip() if link_elem else ''
+                url = link_elem.get('href') if link_elem else ''
+
+                # Extract snippet from result__snippet element (not the title link)
                 snippet_elem = result.find('a', class_='result__snippet')
-                snippet = snippet_elem.get_text().strip() if snippet_elem else ''
-                
+                snippet = snippet_elem.get_text().strip() if snippet_elem else title
+
                 # Extract date from DuckDuckGo result (if available)
-                # DDG shows dates in: <span>YYYY-MM-DD</span> within result__extras__url
                 published_date = None
-                extras_div = result.find('div', class_='result__extras__url')
-                if extras_div:
-                    # Look for span with date pattern
-                    date_span = extras_div.find('span')
-                    if date_span:
-                        date_text = date_span.get_text().strip()
-                        # Parse YYYY-MM-DD format
-                        try:
-                            published_date = datetime.strptime(date_text, '%Y-%m-%d')
-                        except ValueError:
-                            pass
 
                 # Clean URL
                 url = html.unescape(url).strip()
@@ -461,18 +458,15 @@ class SearchEngineCollector:
         
         for query in queries:
             print(f"  Searching: {query}")
-            
+
             # Search SearXNG (has dates in snippets)
-            searxng_results = self.search_searxng(query, max_results=5)
-            
-            # Search DuckDuckGo
-            ddg_results = self.search_duckduckgo(query, max_results=3)
-            
-            # Search Bing News
-            bing_results = self.search_bing_news(query, max_results=2)
-            
+            searxng_results = self.search_searxng(query, max_results=10)
+
+            # Search Bing News (HTML scraping with dates)
+            bing_results = self.search_bing_news(query, max_results=5)
+
             # Combine and process results
-            all_results = searxng_results + ddg_results + bing_results
+            all_results = searxng_results + bing_results
             
             for result in all_results:
                 try:

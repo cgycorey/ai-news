@@ -342,23 +342,39 @@ class SecureXMLParser:
         if not DEFUSEDXML_AVAILABLE:
             print("Warning: Using fallback XML parsing. Install defusedxml for better security.")
     
-    def safe_fromstring(self, xml_content: str) -> Optional[object]:
+    def safe_fromstring(self, xml_content: str, source_url: str = "") -> Optional[object]:
         """Safely parse XML from string.
-        
+
         Args:
             xml_content: XML content to parse
-            
+            source_url: Source URL for error reporting
+
         Returns:
             Parsed XML element or None if parsing fails
         """
         if not xml_content:
             return None
+
+        # Check if content is HTML (blocking page) before attempting XML parsing
+        content_lower = xml_content.lower().strip()
         
+        # More lenient check: reject ONLY if it's clearly an HTML document
+        # Valid RSS/Atom feeds start with <?xml or <rss or <feed or <atom
+        if content_lower.startswith('<!doctype html>') or (content_lower.startswith('<html>') and not content_lower.startswith('<?xml')):
+            url_hint = f" from {source_url}" if source_url else ""
+            print(f"⚠ Received HTML instead of XML{url_hint} (likely blocked/403)")
+            return None
+
         if DEFUSEDXML_AVAILABLE:
             try:
                 return safe_fromstring(xml_content)
             except Exception as e:
-                print(f"Secure XML parsing failed: {e}")
+                error_msg = str(e)
+                url_hint = f" from {source_url}" if source_url else ""
+                if 'not well-formed' in error_msg:
+                    print(f"⚠ XML parsing failed{url_hint} (received non-XML response - site may be blocking requests)")
+                else:
+                    print(f"⚠ XML parsing failed{url_hint}: {e}")
                 return None
         else:
             # Fallback with basic protection
@@ -425,6 +441,6 @@ def clean_text_content(text: str) -> str:
     return html_sanitizer.clean_text_content(text)
 
 
-def parse_xml_safe(xml_content: str) -> Optional[object]:
+def parse_xml_safe(xml_content: str, source_url: str = "") -> Optional[object]:
     """Safely parse XML content."""
-    return xml_parser.safe_fromstring(xml_content)
+    return xml_parser.safe_fromstring(xml_content, source_url)

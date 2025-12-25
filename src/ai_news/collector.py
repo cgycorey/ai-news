@@ -24,7 +24,11 @@ class SimpleCollector:
     def __init__(self, database: Database):
         self.database = database
         self.headers = {
-            'User-Agent': 'AI-News-Collector/1.0 (Simple RSS Reader)'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'DNT': '1',
+            'Connection': 'keep-alive'
         }
     
     def clean_html(self, html_content: str) -> str:
@@ -127,12 +131,109 @@ class SimpleCollector:
             response = safe_urlopen(url, headers=self.headers, timeout=30)
             if response is None:
                 return None
-            
+
+            # Read content
             with response:
-                content = response.read()
-            
+                content_bytes = response.read()
+                content = content_bytes.decode('utf-8', errors='ignore')
+
+            # Check if response is HTML (blocking page) instead of XML/RSS
+            # More lenient check: reject ONLY if it's clearly an HTML document
+            # Valid RSS/Atom feeds start with <?xml or <rss or <feed or <atom
+            content_lower = content.lower().strip()
+            if content_lower.startswith('<!doctype html>') or (content_lower.startswith('<html>') and not content_lower.startswith('<?xml')):
+                print(f"⚠ Received HTML instead of RSS from {url} (likely blocked or 403)")
+                return None
+
             # Parse XML securely
-            root = parse_xml_safe(content.decode('utf-8', errors='ignore'))
+            root = parse_xml_safe(content, source_url=url)
+            return root
+
+        except Exception as e:
+            error_str = str(e)
+            if '403' in error_str or 'Forbidden' in error_str:
+                print(f"⚠ Access forbidden (403) from {url}")
+            elif '404' in error_str or 'Not Found' in error_str:
+                print(f"⚠ Feed not found (404) from {url}")
+            else:
+                print(f"Error fetching RSS feed from {url}: {e}")
+            return None
+
+            # Check HTTP status code - response has .status or .getcode()
+            try:
+                if hasattr(response, 'status'):
+                    status = response.status
+                else:
+                    status = response.getcode()
+            except Exception:
+                status = 0
+
+            if status == 403:
+                print(f"⚠ Access forbidden (403) from {url}")
+                response.close()
+                return None
+            elif status == 404:
+                print(f"⚠ Feed not found (404) from {url}")
+                response.close()
+                return None
+            elif status >= 400:
+                print(f"⚠ Server error ({status}) from {url}")
+                response.close()
+                return None
+
+            # Read content
+            try:
+                content_bytes = response.read()
+                content = content_bytes.decode('utf-8', errors='ignore')
+            except Exception as e:
+                print(f"⚠ Failed to read content from {url}: {e}")
+                response.close()
+                return None
+            finally:
+                response.close()
+
+            # Check if response is HTML (blocking page) instead of XML/RSS
+            content_lower = content.lower().strip()
+            if content_lower.startswith('<!doctype html>') or content_lower.startswith('<html'):
+                print(f"⚠ Received HTML instead of RSS from {url} (likely blocked)")
+                return None
+
+            # Parse XML securely
+            root = parse_xml_safe(content)
+            return root
+
+        except Exception as e:
+            print(f"Error fetching RSS feed from {url}: {e}")
+            return None
+
+            # Check HTTP status code
+            try:
+                status = response.status  # HTTPResponse has .status
+            except AttributeError:
+                status = response.getcode()  # Fallback for older Python versions
+
+            if status == 403:
+                print(f"⚠ Access forbidden (403) from {url}")
+                return None
+            elif status == 404:
+                print(f"⚠ Feed not found (404) from {url}")
+                return None
+            elif status >= 400:
+                print(f"⚠ Server error ({status}) from {url}")
+                return None
+
+            with response:
+                content_bytes = response.read()
+                content = content_bytes.decode('utf-8', errors='ignore')
+
+            # Check if response is HTML (blocking page) instead of XML/RSS
+            content_lower = content.lower().strip()
+            if content_lower.startswith('<!doctype html>') or content_lower.startswith('<html'):
+                print(f"⚠ Received HTML instead of RSS from {url} (likely blocked)")
+                return None
+
+            # Parse XML securely
+            root = parse_xml_safe(content)
             return root
             
         except Exception as e:

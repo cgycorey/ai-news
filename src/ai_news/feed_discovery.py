@@ -622,7 +622,12 @@ class FeedDiscoveryEngine:
 
         try:
             headers = {
-                'User-Agent': 'Mozilla/5.0 (compatible; AI-News-Feed-Discovery/1.0)'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Accept-Encoding': 'gzip, deflate',
+                'DNT': '1',
+                'Connection': 'keep-alive'
             }
 
             response = requests.get(url, headers=headers, timeout=15)
@@ -729,7 +734,12 @@ class FeedDiscoveryEngine:
             logger.debug(f"Validating feed: {rss_url}")
 
             headers = {
-                'User-Agent': 'AI-News-Feed-Discovery/1.0'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Accept-Encoding': 'gzip, deflate',
+                'DNT': '1',
+                'Connection': 'keep-alive'
             }
 
             response = requests.get(rss_url, headers=headers, timeout=15)
@@ -1198,7 +1208,14 @@ class FeedValidator:
     def get_feed_preview(self, rss_url: str, max_articles: int = 3) -> List[Dict[str, str]]:
         """Get preview articles from a feed."""
         try:
-            headers = {'User-Agent': 'AI-News-Feed-Discovery/1.0'}
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Accept-Encoding': 'gzip, deflate',
+                'DNT': '1',
+                'Connection': 'keep-alive'
+            }
             response = requests.get(rss_url, headers=headers, timeout=10)
             response.raise_for_status()
 
