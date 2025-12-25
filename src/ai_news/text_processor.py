@@ -70,7 +70,6 @@ def _import_textblob():
     global TextBlob
     from textblob import TextBlob
     return TextBlob
-from collections import Counter
 import logging
 
 from .spacy_utils import load_spacy_model

@@ -37,14 +37,22 @@ class DigestCache:
                 )
             """)
 
-    def _make_key(self, topics: List[str], days: int) -> str:
+    def _make_key(self, topics: List[str], days: int, suffix: str = "") -> str:
         """
         Generate cache key from topics and days.
 
         Uses MD5 hash for consistent keys regardless of topic order.
+        
+        Args:
+            topics: List of topic keywords
+            days: Number of days for digest
+            suffix: Optional suffix to differentiate cache keys (e.g., "_and" vs "_or")
+        
+        Returns:
+            MD5 hash cache key
         """
         # Sort topics for consistent keys
-        normalized = json.dumps(sorted(topics) + [days])
+        normalized = json.dumps(sorted(topics) + [days] + [suffix])
         return hashlib.md5(normalized.encode()).hexdigest()
 
     def _generate_cache_key(self, topics: List[str], days: int) -> str:
@@ -68,18 +76,19 @@ class DigestCache:
         normalized = json.dumps(sorted(topics) + [days])
         return hashlib.md5(normalized.encode()).hexdigest()
 
-    def get(self, topics: List[str], days: int) -> Optional[Dict[str, Any]]:
+    def get(self, topics: List[str], days: int, suffix: str = "") -> Optional[Dict[str, Any]]:
         """
         Retrieve cached results if valid.
 
         Args:
             topics: List of topic keywords
             days: Number of days for digest
+            suffix: Optional suffix to differentiate cache keys
 
         Returns:
             Cached results dict if valid and not expired, None otherwise
         """
-        key = self._make_key(topics, days)
+        key = self._make_key(topics, days, suffix)
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.execute(
@@ -96,16 +105,17 @@ class DigestCache:
             print(f"Cache retrieval error: {e}")
         return None
 
-    def set(self, topics: List[str], days: int, results: Dict[str, Any]):
+    def set(self, topics: List[str], days: int, results: Dict[str, Any], suffix: str = ""):
         """
-        Store analysis results with expiration.
+        Store results in cache.
 
         Args:
             topics: List of topic keywords
             days: Number of days for digest
             results: Analysis results to cache
+            suffix: Optional suffix to differentiate cache keys
         """
-        key = self._make_key(topics, days)
+        key = self._make_key(topics, days, suffix)
 
         # Use results' generated_at if available, otherwise use now
         created_at = datetime.now()
@@ -127,15 +137,16 @@ class DigestCache:
             # Log error but don't crash - cache failure is non-critical
             print(f"Cache storage error: {e}")
 
-    def invalidate(self, topics: List[str], days: int):
+    def invalidate(self, topics: List[str], days: int, suffix: str = ""):
         """
         Invalidate specific cache entry.
 
         Args:
             topics: List of topic keywords
             days: Number of days for digest
+            suffix: Optional suffix to differentiate cache keys
         """
-        key = self._make_key(topics, days)
+        key = self._make_key(topics, days, suffix)
         try:
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute("DELETE FROM digest_spacy_cache WHERE topics_key = ?", (key,))

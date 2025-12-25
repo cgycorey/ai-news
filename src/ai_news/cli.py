@@ -811,6 +811,66 @@ def main():
     # Parse arguments
     args = parser.parse_args()
     
+    def _check_and_collect_fresh_data(database: Database, days: int) -> None:
+        """
+        Check if database has fresh articles, auto-collect if stale.
+        
+        Args:
+            database: Database instance to check
+            days: Number of days to consider as 'fresh'
+        """
+        try:
+            articles = database.get_articles(limit=1)
+            
+            should_collect = False
+            if not articles:
+                should_collect = True
+                reason = "Database is empty"
+            else:
+                newest_article = articles[0]
+                if newest_article.published_at:
+                    if newest_article.published_at.tzinfo:
+                        article_date = newest_article.published_at.astimezone(None).replace(tzinfo=None)
+                    else:
+                        article_date = newest_article.published_at
+                    article_age = datetime.now().replace(tzinfo=None) - article_date
+                    age_days = article_age.days
+                    if age_days > days:
+                        should_collect = True
+                        reason = f"Newest article is {age_days} days old (threshold: {days} days)"
+                else:
+                    should_collect = True
+                    reason = "Articles have no timestamp"
+            
+            if should_collect:
+                print(f"⚠ {reason}")
+                print("📰 Collecting fresh articles...")
+                
+                try:
+                    from .collector import SimpleCollector
+                    from .config import Config
+                    
+                    config = Config()
+                    collector = SimpleCollector(database)
+                    total_stats = {"feeds_processed": 0, "total_fetched": 0, "total_added": 0, "ai_relevant_added": 0}
+                    
+                    for region_code, region_config in config.regions.items():
+                        if region_config.enabled:
+                            region_stats = collector.collect_region(config, region_code)
+                            total_stats["feeds_processed"] += region_stats["feeds_processed"]
+                            total_stats["total_fetched"] += region_stats["total_fetched"]
+                            total_stats["total_added"] += region_stats["total_added"]
+                            total_stats["ai_relevant_added"] += region_stats["ai_relevant_added"]
+                    
+                    print(f"✓ Collection complete: {total_stats['total_added']} articles from {total_stats['feeds_processed']} feeds")
+                    print("Generating digest...")
+                except Exception as e:
+                    print(f"⚠ Collection failed: {e}")
+                    print("Continuing with digest generation...")
+                    
+        except Exception as e:
+            print(f"⚠ Error checking data freshness: {e}")
+    
     # If no command provided, default to generating today's news
     if not args.command:
         print("🤖 No command specified - generating today's AI news digest...")
@@ -1067,9 +1127,9 @@ def main():
             print(fill(article.summary, width=80))
             if len(article.content) > len(article.summary):
                 print(f"\nFULL CONTENT:")
-                print(fill(article.content, width=80))
+            print(fill(article.content, width=80))
             print("="*80)
-            
+        
         elif args.command == 'digest':
             
             # Auto-inference logic: if --topic is provided, default type to 'topic'
@@ -1115,7 +1175,10 @@ def main():
                 
                 print(f"Generating topic analysis for: {topics_str}")
                 print(f"Time range: Last {args.days} days")
-                
+
+                # Smart auto-collection: collect fresh articles if data is stale
+                _check_and_collect_fresh_data(database, args.days)
+
                 # Check if spaCy mode is enabled (default: yes, unless --no-spacy)
                 use_spacy = not getattr(args, 'no_spacy', False)
                 
@@ -1173,7 +1236,8 @@ def main():
                             scored_articles = analyzer.analyze(
                                 articles=articles_dict,
                                 topics=topics,
-                                days=args.days
+                                days=args.days,
+                                use_and_logic=True
                             )
                             
                             # Check cache status
@@ -1688,28 +1752,6 @@ def save_nlp_results_to_database(result, database):
     # This would save the analysis results to the database
     # Implementation depends on database schema
     pass
-
-
-def cmd_generate_ideas(args):
-    """Removed: Academic product idea generation."""
-    print("❌ Academic feature removed: Product idea generation")
-    print("✅ Focus on practical business intelligence:")
-    print("   • Entity tracking and mentions")
-    print("   • Market trend analysis")
-    print("   • Company monitoring")
-    print("   • Technology trend identification")
-    print("\n💡 Use 'ai-news list-entities' or 'ai-news analyze' instead!")
-    return
-
-
-def cmd_list_ideas(args):
-    """List generated product ideas."""
-    print("❌ Academic feature removed: Product idea listing")
-    print("✅ Focus on practical business intelligence:")
-    print("   • Use 'ai-news list-entities' for company tracking")
-    print("   • Use 'ai-news analyze' for trend analysis")
-    print("   • Use 'ai-news search' for market insights")
-    return
 
 
 def cmd_setup_spacy(args):
@@ -2971,38 +3013,54 @@ def handle_cache_command(args, database):
         print("❌ Unknown cache command. Use --help to see available commands.")
 
 
-def _generate_keyword_topic_digest(md_gen: MarkdownGenerator, database: Database, topics: list, days: int) -> str:
+def _generate_keyword_topic_digest(md_gen: MarkdownGenerator, database: Database, topics: list, days: int, use_and_logic: bool = True) -> str:
     """
     Generate a keyword-based topic digest (fallback when spaCy unavailable or disabled).
-    
+
     Args:
         md_gen: MarkdownGenerator instance
         database: Database instance
         topics: List of topic keywords
         days: Number of days for analysis
-        
+        use_and_logic: If True, articles must match ALL topics (AND). If False, match ANY topic (OR).
+
     Returns:
         Markdown digest content
     """
     from datetime import timedelta
-    
+
     start_date = datetime.now().replace(tzinfo=None) - timedelta(days=days)
     topics_str = ', '.join(topics)
-    
-    # Search for articles related to topics
-    all_articles = []
-    for topic in topics:
-        articles = database.search_articles(topic, limit=100)
-        all_articles.extend(articles)
-    
-    # Remove duplicates (by URL)
-    seen_urls = set()
-    unique_articles = []
-    for article in all_articles:
-        if article.url not in seen_urls:
-            seen_urls.add(article.url)
-            unique_articles.append(article)
-    
+
+    if use_and_logic and len(topics) > 1:
+        # AND logic: Articles must match ALL topics
+        # Search for first topic to get candidate articles
+        candidate_articles = database.search_articles(topics[0], limit=500)
+
+        # Filter candidates that contain ALL remaining topics
+        matching_articles = []
+        for article in candidate_articles:
+            article_text = f"{article.title} {article.content} {article.summary}".lower()
+            # Check if ALL topics are found in this article
+            if all(topic.lower() in article_text for topic in topics[1:]):
+                matching_articles.append(article)
+
+        unique_articles = matching_articles
+    else:
+        # OR logic: Search for articles related to any topic
+        all_articles = []
+        for topic in topics:
+            articles = database.search_articles(topic, limit=100)
+            all_articles.extend(articles)
+
+        # Remove duplicates (by URL)
+        seen_urls = set()
+        unique_articles = []
+        for article in all_articles:
+            if article.url not in seen_urls:
+                seen_urls.add(article.url)
+                unique_articles.append(article)
+
     # Filter by date range
     recent_articles = []
     for a in unique_articles:
@@ -3015,14 +3073,14 @@ def _generate_keyword_topic_digest(md_gen: MarkdownGenerator, database: Database
                 article_date = a.published_at
             if article_date >= start_date:
                 recent_articles.append(a)
-    
+
     if not recent_articles:
         return f"""# Topic Analysis: {topics_str}
 *Last {days} days* - Generated on {datetime.now().strftime('%Y-%m-%d %H:%M')}
 
 *No articles found for '{topics_str}' in the last {days} days.*
 """
-    
+
     # Sort by date (newest first), handling timezone-aware datetimes
     def sort_key(article):
         if article.published_at:
@@ -3030,13 +3088,14 @@ def _generate_keyword_topic_digest(md_gen: MarkdownGenerator, database: Database
                 return article.published_at.astimezone(None).replace(tzinfo=None)
             return article.published_at
         return datetime.min
-    
+
     recent_articles.sort(key=sort_key, reverse=True)
-    
+
     # Generate digest
+    logic_mode = "AND (all topics must match)" if use_and_logic and len(topics) > 1 else "OR (any topic matches)"
     digest = f"""# Topic Analysis: {topics_str}
 *Last {days} days* - Generated on {datetime.now().strftime('%Y-%m-%d %H:%M')}
-**Method:** Keyword-based matching
+**Method:** Keyword-based matching ({logic_mode})
 
 ## 📈 Overview
 
@@ -3047,11 +3106,11 @@ def _generate_keyword_topic_digest(md_gen: MarkdownGenerator, database: Database
 ## 📰 Articles ({len(recent_articles)})
 
 """
-    
+
     for i, article in enumerate(recent_articles[:50], 1):  # Limit to 50 articles
         ai_indicator = "🤖 " if article.ai_relevant else ""
         date_str = article.published_at.strftime('%Y-%m-%d') if article.published_at else 'Unknown'
-        
+
         digest += f"""### {i}. {ai_indicator}{article.title}
 
 **Source:** {article.source_name} | **Date:** {date_str} | **Category:** {article.category}
@@ -3063,7 +3122,7 @@ def _generate_keyword_topic_digest(md_gen: MarkdownGenerator, database: Database
 """
         if article.ai_keywords_found:
             digest += f"**AI Keywords:** {', '.join(article.ai_keywords_found)}\n\n"
-    
+
     return digest
 
 

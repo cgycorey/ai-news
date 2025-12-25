@@ -17,7 +17,7 @@ from urllib.parse import urljoin, urlparse
 from .search_collector import SearchEngineCollector
 from .database import Database
 from .feed_cache import FeedCache
-from urllib.parse import unquote, urlparse
+from urllib.parse import unquote
 
 logger = logging.getLogger(__name__)
 
