@@ -615,6 +615,10 @@ def main():
                               help='Maximum number of topics in an intersection (default: 3)')
     search_parser.add_argument('--no-intersections', action='store_true',
                               help='Skip intersection detection (individual topics only)')
+    search_parser.add_argument('--include-rss', action='store_true',
+                              help='Also collect articles from RSS feeds during websearch')
+    search_parser.add_argument('--regions', default='global',
+                              help='Regions to collect RSS feeds from (default: global). Comma-separated: us,uk,eu,apac,global')
     search_parser.add_argument('--save', action='store_true',
                               help='Automatically save articles without prompting')
     search_parser.add_argument('--trending', action='store_true', help='Search trending AI topics')
@@ -1557,6 +1561,7 @@ def handle_websearch_command(args, database):
         # Execute searches and collect results
         all_results = []
         total_articles = 0
+        rss_articles = []
         
         for i, plan in enumerate(search_plans, 1):
             result = _execute_search_plan(
@@ -1567,11 +1572,41 @@ def handle_websearch_command(args, database):
             all_results.append(result)
             total_articles += result['count']
         
+        # Collect from RSS feeds if requested
+        if args.include_rss:
+            print("\n" + "="*60)
+            print("📡 COLLECTING RSS FEEDS")
+            print("="*60)
+            
+            from .collector import SimpleCollector
+            from .config import Config
+            
+            # Parse regions
+            regions = args.regions.split(',') if args.regions else ['global']
+            regions = [r.strip() for r in regions]
+            print(f"📌 Regions: {', '.join(regions)}")
+            print()
+            
+            config = Config()
+            rss_collector = SimpleCollector(database)
+            
+            for region in regions:
+                print(f"📰 Collecting from {region.upper()} region...")
+                try:
+                    result = rss_collector.collect_region(config, region)
+                    region_articles = result.get('articles', [])
+                    rss_articles.extend(region_articles)
+                    print(f"   ✅ Collected {len(region_articles)} articles")
+                except Exception as e:
+                    print(f"   ⚠️  Failed to collect from {region}: {e}")
+            
+            print(f"\n✅ Total RSS articles collected: {len(rss_articles)}")
+        
         # Display summary
-        _display_search_summary(all_results, total_articles, topics)
+        _display_search_summary(all_results, total_articles, topics, rss_articles)
         
         # Save articles
-        saved_count = _save_articles(all_results, database, args.save)
+        saved_count = _save_articles(all_results, database, args.save, rss_articles)
         
         if saved_count > 0:
             print(f"\n💡 You can now generate a digest with:")
@@ -1696,7 +1731,7 @@ def _filter_intersection_articles(
     return filtered
 
 
-def _display_search_summary(all_results: list, total_articles: int, topics: list) -> None:
+def _display_search_summary(all_results: list, total_articles: int, topics: list, rss_articles: list = None) -> None:
     """Display a summary of all search results."""
     print("\n" + "="*60)
     print("                    COLLECTION SUMMARY")
@@ -1714,6 +1749,13 @@ def _display_search_summary(all_results: list, total_articles: int, topics: list
     print(f"Search plans executed: {len(all_results)}")
     print(f"Individual topic articles: {individual_count}")
     print(f"Intersection articles: {intersection_count}")
+    print(f"Web search articles: {total_articles}")
+    
+    # RSS stats
+    if rss_articles is not None:
+        print(f"RSS feed articles: {len(rss_articles)}")
+        total_articles += len(rss_articles)
+    
     print(f"Total articles collected: {total_articles}")
     
     # Show breakdown by tag
@@ -1726,9 +1768,11 @@ def _display_search_summary(all_results: list, total_articles: int, topics: list
     print("="*60)
 
 
-def _save_articles(all_results: list, database, auto_save: bool = False) -> int:
+def _save_articles(all_results: list, database, auto_save: bool = False, rss_articles: list = None) -> int:
     """Save articles to database and return count saved."""
-    total_to_save = sum(r['count'] for r in all_results)
+    websearch_count = sum(r['count'] for r in all_results)
+    rss_count = len(rss_articles) if rss_articles else 0
+    total_to_save = websearch_count + rss_count
     
     if total_to_save == 0:
         print("\n❌ No articles to save.")
@@ -1741,7 +1785,7 @@ def _save_articles(all_results: list, database, auto_save: bool = False) -> int:
             print("Articles not saved.")
             return 0
     
-    # Save all articles
+    # Save websearch articles
     saved_count = 0
     for result in all_results:
         tags_str = ', '.join(result['tags'])
@@ -1751,6 +1795,15 @@ def _save_articles(all_results: list, database, auto_save: bool = False) -> int:
                     saved_count += 1
             except Exception as e:
                 print(f"   ⚠️  Failed to save '{article.title[:50]}...': {e}")
+    
+    # Save RSS articles
+    if rss_articles:
+        for article in rss_articles:
+            try:
+                if database.save_article(article):
+                    saved_count += 1
+            except Exception as e:
+                print(f"   ⚠️  Failed to save RSS article '{article.title[:50]}...': {e}")
     
     print(f"\n✅ Saved {saved_count}/{total_to_save} articles to database")
     print(f"🏷️  Articles tagged with topic lists")
