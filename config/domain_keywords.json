@@ -1,0 +1,22 @@
+{
+  "machine_learning": [
+    "machine learning", "ML", "neural network", "deep learning",
+    "backpropagation", "gradient descent", "loss function"
+  ],
+  "nlp": [
+    "NLP", "natural language processing", "language model",
+    "GPT", "BERT", "Transformer", "LLM", "tokenization"
+  ],
+  "computer_vision": [
+    "computer vision", "image recognition", "CNN", "convolutional",
+    "object detection", "segmentation", "YOLO"
+  ],
+  "robotics": [
+    "robotics", "autonomous", "self-driving", "robot",
+    "manipulation", "navigation", "SLAM"
+  ],
+  "data_science": [
+    "data science", "analytics", "big data", "statistics",
+    "visualization", "pandas", "numpy", "jupyter"
+  ]
+}
