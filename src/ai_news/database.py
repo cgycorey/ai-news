@@ -75,8 +75,92 @@ class Database:
     
     def __init__(self, db_path: str):
         self.db_path = Path(db_path)
+        
+        # Ensure parent directory exists
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        
         self.init_database()
-    
+
+        # Automatic deduplication on first init
+        self._auto_deduplicate()
+
+    def _auto_deduplicate(self):
+        """Automatically remove duplicate articles from database.
+
+        This runs once on database initialization to clean up existing duplicates
+        caused by tracking URLs. Uses canonical URL extraction.
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                # Check if we've already run deduplication
+                cursor = conn.execute("""
+                    SELECT value FROM metadata WHERE key = 'deduplication_run'
+                """).fetchone()
+
+                if cursor:
+                    # Already ran, skip
+                    return
+
+                # Find and remove duplicates
+                logger.info("🔍 Running automatic deduplication...")
+
+                # Get all articles with Bing tracking URLs
+                cursor = conn.execute("""
+                    SELECT id, url, title
+                    FROM articles
+                    WHERE url LIKE '%apiclick.aspx%'
+                    ORDER BY id
+                """).fetchall()
+
+                if not cursor:
+                    # No Bing articles, mark as done
+                    conn.execute("""
+                        INSERT INTO metadata (key, value) VALUES ('deduplication_run', '1')
+                    """)
+                    return
+
+                # Group by canonical URL
+                from urllib.parse import urlparse, parse_qs, unquote
+                from collections import defaultdict
+
+                canonical_groups = defaultdict(list)
+                for article_id, url, title in cursor:
+                    try:
+                        parsed = urlparse(url)
+                        if 'apiclick.aspx' in parsed.path:
+                            params = parse_qs(parsed.query)
+                            canonical = unquote(params.get('url', [url])[0])
+                        else:
+                            canonical = url
+                        canonical_groups[canonical].append((article_id, title))
+                    except:
+                        canonical_groups[url].append((article_id, title))
+
+                # Find duplicates (keep first, delete rest)
+                duplicates_to_delete = []
+                for canonical, articles in canonical_groups.items():
+                    if len(articles) > 1:
+                        # Sort by ID, keep oldest
+                        articles.sort(key=lambda x: x[0])
+                        # Keep first, mark others for deletion
+                        duplicates_to_delete.extend([a[0] for a in articles[1:]])
+
+                if duplicates_to_delete:
+                    # Delete duplicates
+                    for article_id in duplicates_to_delete:
+                        conn.execute("DELETE FROM articles WHERE id = ?", (article_id,))
+
+                    logger.info(f"✅ Auto-removed {len(duplicates_to_delete)} duplicate articles")
+
+                # Mark deduplication as complete
+                conn.execute("""
+                    INSERT INTO metadata (key, value) VALUES ('deduplication_run', '1')
+                """)
+                conn.commit()
+
+        except Exception as e:
+            logger.warning(f"Auto-deduplication failed: {e}")
+
     def init_database(self):
         """Initialize database tables."""
         with sqlite3.connect(self.db_path) as conn:
@@ -97,15 +181,23 @@ class Database:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
-            
+
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS metadata (
+                    key TEXT PRIMARY KEY,
+                    value TEXT,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_url ON articles(url)
             """)
-            
+
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_published_at ON articles(published_at)
             """)
-            
+
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_ai_relevant ON articles(ai_relevant)
             """)
@@ -115,11 +207,25 @@ class Database:
             """)
     
     def save_article(self, article: Article) -> Optional[int]:
-        """Save an article to the database."""
+        """Save an article to the database with automatic deduplication."""
         try:
             with sqlite3.connect(self.db_path) as conn:
+                # Extract canonical URL to prevent duplicates
+                canonical_url = self._extract_canonical_url(article.url)
+
+                # Check if article already exists (by canonical URL)
+                existing = conn.execute(
+                    "SELECT id FROM articles WHERE url = ?", (canonical_url,)
+                ).fetchone()
+
+                if existing:
+                    # Article already exists, skip
+                    logger.debug(f"Duplicate article skipped: {article.title[:50]}...")
+                    return existing[0]
+
+                # Save new article with canonical URL
                 cursor = conn.execute("""
-                    INSERT OR REPLACE INTO articles 
+                    INSERT INTO articles 
                     (title, content, summary, url, author, published_at, 
                      source_name, category, region, ai_relevant, ai_keywords_found)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -127,7 +233,7 @@ class Database:
                     article.title,
                     article.content,
                     article.summary,
-                    article.url,
+                    canonical_url,  # Use canonical URL
                     article.author,
                     article.published_at,
                     article.source_name,
@@ -138,8 +244,44 @@ class Database:
                 ))
                 return cursor.lastrowid
         except sqlite3.Error as e:
-            print(f"Error saving article: {e}")
+            logger.error(f"Error saving article: {e}")
             return None
+
+    def _extract_canonical_url(self, url: str) -> str:
+        """Extract canonical URL from tracking/redirect URLs.
+
+        Handles:
+        - Bing News: apiclick.aspx?tid=...&url=...
+        - Other redirect services
+
+        Args:
+            url: URL that might contain tracking parameters
+
+        Returns:
+            Canonical URL (actual article URL)
+        """
+        if not url:
+            return url
+
+        try:
+            from urllib.parse import urlparse, parse_qs, unquote
+
+            parsed = urlparse(url)
+
+            # Handle Bing News redirects
+            if 'apiclick.aspx' in parsed.path:
+                params = parse_qs(parsed.query)
+                canonical = params.get('url', [url])[0]
+                return unquote(canonical)
+
+            # Handle other common redirect patterns
+            # Add more as needed
+
+            return url
+
+        except Exception as e:
+            logger.warning(f"Failed to extract canonical URL from {url}: {e}")
+            return url
 
     def get_article_by_id(self, article_id: int) -> Optional[Article]:
         """Get article by ID."""

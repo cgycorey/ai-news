@@ -2,18 +2,59 @@
 
 import urllib.request
 import urllib.parse
+from urllib.parse import urlparse, parse_qs, unquote
 import json
 import re
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 import html
 import time
+import logging
 
 from .config import FeedConfig
 from .database import Article, Database
 from .security_utils import (
     parse_xml_safe, clean_text_content, validate_url, safe_urlopen
 )
+
+logger = logging.getLogger(__name__)
+
+
+def extract_canonical_url(url: str) -> str:
+    """Extract canonical URL from tracking/redirect URLs.
+
+    Handles:
+    - Bing News: apiclick.aspx?tid=...&url=...
+    - Other redirect services
+
+    Args:
+        url: URL that might contain tracking parameters
+
+    Returns:
+        Canonical URL (actual article URL)
+    """
+    if not url:
+        return url
+
+    try:
+        parsed = urlparse(url)
+
+        # Handle Bing News redirects
+        if 'apiclick.aspx' in parsed.path:
+            params = parse_qs(parsed.query)
+            canonical = params.get('url', [url])[0]
+            canonical_url = unquote(canonical)
+            logger.debug(f"Extracted canonical URL: {canonical_url}")
+            return canonical_url
+
+        # Handle other common redirect patterns
+        # Add more as needed
+
+        return url
+
+    except Exception as e:
+        logger.warning(f"Failed to extract canonical URL from {url}: {e}")
+        return url
 
 
 class SearchEngineCollector:
@@ -508,12 +549,16 @@ class SearchEngineCollector:
                                 self._page_fetch_count += 1
 
                         # Note: published_at can be None - digest will show "Unknown"
-                        
+
+                        # Extract canonical URL to avoid duplicate tracking URLs
+                        original_url = result['url']
+                        canonical_url = extract_canonical_url(original_url)
+
                         article = Article(
                             title=title,
                             content=content,
                             summary=content[:200] + '...' if len(content) > 200 else content,
-                            url=result['url'],
+                            url=canonical_url,
                             author='',
                             published_at=published_at,
                             source_name=result['source'],

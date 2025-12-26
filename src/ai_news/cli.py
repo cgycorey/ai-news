@@ -960,11 +960,10 @@ def main():
                     )
                     total_articles += result['count']
 
-                print(f"\n✅ Collection complete: {total_articles} AI-relevant articles")
+                print(f"\n✅ Websearch complete: {total_articles} AI-relevant articles")
                 print("✓ All articles are topic-focused and AI-relevant")
-                return
 
-            # Topic-focused RSS collection
+            # Topic-focused RSS collection (always runs after websearch if topics specified)
             if getattr(args, 'topics', None):
                 topics = [t.strip() for t in args.topics.split(',')]
 
@@ -1009,8 +1008,6 @@ def main():
                     articles = database.get_articles_by_keywords(topic_config.keywords, limit=100)
                     ai_count = sum(1 for a in articles if a.ai_relevant)
                     print(f"   • {topic}: {len(articles)} articles ({ai_count} AI-relevant)")
-
-                return
 
             # AI-only collection (filter all RSS feeds to AI-relevant only)
             if getattr(args, 'ai_only', False):
