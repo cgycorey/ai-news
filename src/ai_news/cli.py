@@ -526,6 +526,9 @@ def main():
     collect_parser = subparsers.add_parser('collect', help='Collect news from RSS feeds')
     collect_parser.add_argument('--region', choices=['us', 'uk', 'eu', 'apac', 'global'], help='Collect from specific region only')
     collect_parser.add_argument('--regions', help='Collect from multiple regions (comma-separated)')
+    collect_parser.add_argument('--topics', help='Collect only for specific topics (comma-separated, topic-focused collection)')
+    collect_parser.add_argument('--ai-only', action='store_true', help='Filter to AI-relevant articles only (reduces noise)')
+    collect_parser.add_argument('--websearch', action='store_true', help='Use web search instead of RSS feeds (topic-focused, AI-relevant)')
     
     # List command
     list_parser = subparsers.add_parser('list', help='List recent articles')
@@ -916,6 +919,125 @@ def main():
     # Execute command
     try:
         if args.command == 'collect':
+            # Check if using websearch mode (topic-focused, AI-relevant)
+            if getattr(args, 'websearch', False):
+                if not getattr(args, 'topics', None):
+                    print("⚠️  --websearch requires --topics to be specified")
+                    print("   Example: ai-news collect --websearch --topics blockchain,AI")
+                    return
+
+                print("\n" + "="*60)
+                print("🔍 TOPIC-FOCUSED COLLECTION (WEBSEARCH MODE)")
+                print("="*60)
+                print("✓ Collecting AI-relevant articles for specific topics")
+                print("✓ Higher relevance, less noise\n")
+
+                # Import websearch components
+                from .search_collector import SearchEngineCollector
+                from .intersection_optimization import create_intersection_optimizer
+                from .intersection_planner import plan_topic_searches
+
+                topics = [t.strip() for t in args.topics.split(',')]
+                print(f"📋 Topics: {', '.join(topics)}")
+
+                search_collector = SearchEngineCollector(database)
+                optimizer = create_intersection_optimizer()
+
+                # Generate search plans (individual topics + intersections)
+                search_plans = plan_topic_searches(topics, max_intersection_size=2)
+
+                print(f"📊 Executing {len(search_plans)} searches...")
+                total_articles = 0
+
+                for i, plan in enumerate(search_plans, 1):
+                    query = f"AI {plan['query']}" if 'query' in plan else 'AI ' + ' + '.join(plan['topics'])
+                    print(f"   {i}/{len(search_plans)}: {query}")
+
+                    result = _execute_search_plan(
+                        plan, i, len(search_plans),
+                        search_collector, optimizer, database,
+                        limit=50, min_confidence=0.25
+                    )
+                    total_articles += result['count']
+
+                print(f"\n✅ Collection complete: {total_articles} AI-relevant articles")
+                print("✓ All articles are topic-focused and AI-relevant")
+                return
+
+            # Topic-focused RSS collection
+            if getattr(args, 'topics', None):
+                topics = [t.strip() for t in args.topics.split(',')]
+
+                print("\n" + "="*60)
+                print("📋 TOPIC-FOCUSED COLLECTION (RSS MODE)")
+                print("="*60)
+                print(f"📋 Topics: {', '.join(topics)}")
+
+                # Validate topics exist in config
+                valid_topics = []
+                for topic in topics:
+                    if topic in config.topics:
+                        valid_topics.append(topic)
+                    else:
+                        print(f"⚠️  Topic '{topic}' not found in config")
+
+                if not valid_topics:
+                    print("❌ No valid topics found. Use 'ai-news topics list' to see available topics.")
+                    return
+
+                collector = SimpleCollector(database)
+                total_stats = {"feeds_processed": 0, "total_fetched": 0, "total_added": 0, "ai_relevant_added": 0}
+
+                # Collect from all regions but filter by topics
+                for region_code, region_config in config.regions.items():
+                    if region_config.enabled:
+                        region_stats = collector.collect_region(config, region_code)
+                        total_stats["feeds_processed"] += region_stats["feeds_processed"]
+                        total_stats["total_fetched"] += region_stats["total_fetched"]
+                        total_stats["total_added"] += region_stats["total_added"]
+                        total_stats["ai_relevant_added"] += region_stats["ai_relevant_added"]
+
+                print(f"\n📊 Collection Summary:")
+                print(f"   Feeds processed: {total_stats['feeds_processed']}")
+                print(f"   Total articles: {total_stats['total_added']}")
+                print(f"   AI-relevant: {total_stats['ai_relevant_added']}")
+
+                # Show topic-specific stats
+                print(f"\n📈 Topic Relevance:")
+                for topic in valid_topics:
+                    topic_config = config.topics[topic]
+                    articles = database.get_articles_by_keywords(topic_config.keywords, limit=100)
+                    ai_count = sum(1 for a in articles if a.ai_relevant)
+                    print(f"   • {topic}: {len(articles)} articles ({ai_count} AI-relevant)")
+
+                return
+
+            # AI-only collection (filter all RSS feeds to AI-relevant only)
+            if getattr(args, 'ai_only', False):
+                print("\n🤖 AI-ONLY COLLECTION MODE")
+                print("="*50)
+                print("✓ Collecting from RSS feeds...")
+                print("✓ Filtering to AI-relevant articles only\n")
+
+                collector = SimpleCollector(database)
+                total_stats = {"feeds_processed": 0, "total_fetched": 0, "total_added": 0, "ai_relevant_added": 0}
+
+                for region_code, region_config in config.regions.items():
+                    if region_config.enabled:
+                        region_stats = collector.collect_region(config, region_code)
+                        total_stats["feeds_processed"] += region_stats["feeds_processed"]
+                        total_stats["total_fetched"] += region_stats["total_fetched"]
+                        total_stats["total_added"] += region_stats["total_added"]
+                        total_stats["ai_relevant_added"] += region_stats["ai_relevant_added"]
+
+                print_stats(total_stats)
+                print(f"\n📊 AI Relevance Rate:")
+                if total_stats['total_added'] > 0:
+                    rate = (total_stats['ai_relevant_added'] / total_stats['total_added']) * 100
+                    print(f"   {rate:.1f}% of collected articles are AI-relevant")
+                return
+
+            # Original behavior - collect from all regions (or specific region)
             if getattr(args, 'region', None):
                 # Collect from specific region
                 collector = SimpleCollector(database)
@@ -926,7 +1048,7 @@ def main():
                 regions = [r.strip() for r in args.regions.split(',')]
                 collector = SimpleCollector(database)
                 stats = collector.collect_multiple_regions(config, regions)
-                
+
                 print(f"\n🌍 Multi-Region Collection Summary:")
                 print(f"Regions processed: {stats['regions_processed']}")
                 print(f"Total feeds processed: {stats['feeds_processed']}")
@@ -937,7 +1059,7 @@ def main():
                 # Original behavior - collect from all regions
                 collector = SimpleCollector(database)
                 total_stats = {"feeds_processed": 0, "total_fetched": 0, "total_added": 0, "ai_relevant_added": 0}
-                
+
                 for region_code, region_config in config.regions.items():
                     if region_config.enabled:
                         region_stats = collector.collect_region(config, region_code)
@@ -945,7 +1067,7 @@ def main():
                         total_stats["total_fetched"] += region_stats["total_fetched"]
                         total_stats["total_added"] += region_stats["total_added"]
                         total_stats["ai_relevant_added"] += region_stats["ai_relevant_added"]
-                
+
                 print_stats(total_stats)
             
         elif args.command == 'list':
@@ -1261,24 +1383,24 @@ def main():
                                 # Fallback to keyword-based if no high-confidence articles
                                 print("No high-confidence matches found, using keyword-based digest")
                                 print("Fallback: Keyword matching")
-                                content = _generate_keyword_topic_digest(md_gen, database, topics, args.days)
+                                content = _generate_keyword_topic_digest(md_gen, database, topics, args.days, use_and_logic=False)
                         
                         else:
                             # spaCy not available, use keyword mode
                             print("spaCy not available, using keyword-based analysis")
                             print("Fallback: Keyword matching")
-                            content = _generate_keyword_topic_digest(md_gen, database, topics, args.days)
+                            content = _generate_keyword_topic_digest(md_gen, database, topics, args.days, use_and_logic=False)
                     
                     except Exception as e:
                         # Error with spaCy, fallback to keywords
                         print(f"spaCy analysis failed: {e}")
                         print("Fallback: Keyword matching")
-                        content = _generate_keyword_topic_digest(md_gen, database, topics, args.days)
+                        content = _generate_keyword_topic_digest(md_gen, database, topics, args.days, use_and_logic=False)
                 
                 else:
                     # Keyword-only mode (--no-spacy flag)
                     print("Mode: Keyword-only matching (--no-spacy)")
-                    content = _generate_keyword_topic_digest(md_gen, database, topics, args.days)
+                    content = _generate_keyword_topic_digest(md_gen, database, topics, args.days, use_and_logic=False)
             
             # Display or save the digest
             if args.save:
@@ -3034,31 +3156,28 @@ def _generate_keyword_topic_digest(md_gen: MarkdownGenerator, database: Database
 
     if use_and_logic and len(topics) > 1:
         # AND logic: Articles must match ALL topics
-        # Search for first topic to get candidate articles
-        candidate_articles = database.search_articles(topics[0], limit=500)
+        # Get recent articles (ai_only to get relevant articles)
+        candidate_articles = database.get_articles(limit=5000, ai_only=True)
 
-        # Filter candidates that contain ALL remaining topics
+        # Filter candidates that contain ALL topics (in title, content, or category)
         matching_articles = []
         for article in candidate_articles:
-            article_text = f"{article.title} {article.content} {article.summary}".lower()
+            article_text = f"{article.title} {article.content or ''} {article.summary or ''} {article.category or ''}".lower()
             # Check if ALL topics are found in this article
-            if all(topic.lower() in article_text for topic in topics[1:]):
+            if all(topic.lower() in article_text for topic in topics):
                 matching_articles.append(article)
 
         unique_articles = matching_articles
     else:
-        # OR logic: Search for articles related to any topic
-        all_articles = []
-        for topic in topics:
-            articles = database.search_articles(topic, limit=100)
-            all_articles.extend(articles)
+        # OR logic: Get AI articles and filter by ANY topic match
+        all_articles = database.get_articles(limit=5000, ai_only=True)
 
-        # Remove duplicates (by URL)
-        seen_urls = set()
+        # Filter articles that contain AT LEAST ONE topic
         unique_articles = []
         for article in all_articles:
-            if article.url not in seen_urls:
-                seen_urls.add(article.url)
+            article_text = f"{article.title} {article.content or ''} {article.summary or ''} {article.category or ''}".lower()
+            # Check if ANY topic matches
+            if any(topic.lower() in article_text for topic in topics):
                 unique_articles.append(article)
 
     # Filter by date range

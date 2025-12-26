@@ -768,3 +768,56 @@ class Database:
         except sqlite3.Error as e:
             logger.error(f"Error getting feed cache stats: {e}")
             return {}
+
+    def remove_orphaned_entities(self, dry_run: bool = False) -> dict:
+        """Remove entities that are not referenced by any articles.
+
+        Args:
+            dry_run: If True, only report what would be deleted
+
+        Returns:
+            Dict with orphaned counts by type
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+
+                # Find orphaned entities (not in article_entities)
+                orphaned = conn.execute("""
+                    SELECT
+                        e.entity_type,
+                        COUNT(*) as count
+                    FROM entities e
+                    LEFT JOIN article_entities ae ON e.id = ae.entity_id
+                    WHERE ae.entity_id IS NULL
+                    GROUP BY e.entity_type
+                """).fetchall()
+
+                # Count by type
+                by_type = {row['entity_type']: row['count'] for row in orphaned}
+                total_orphaned = sum(by_type.values())
+
+                if not dry_run and total_orphaned > 0:
+                    # Delete orphaned entities
+                    conn.execute("""
+                        DELETE FROM entities
+                        WHERE id IN (
+                            SELECT e.id FROM entities e
+                            LEFT JOIN article_entities ae ON e.id = ae.entity_id
+                            WHERE ae.entity_id IS NULL
+                        )
+                    """)
+                    conn.commit()
+                    logger.info(f"Deleted {total_orphaned} orphaned entities")
+
+                return {
+                    'total_orphaned': total_orphaned,
+                    'by_type': by_type
+                }
+
+        except sqlite3.Error as e:
+            logger.error(f"Error removing orphaned entities: {e}")
+            return {
+                'total_orphaned': 0,
+                'by_type': {}
+            }

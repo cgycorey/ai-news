@@ -20,105 +20,41 @@ from .security_utils import (
 
 class SimpleCollector:
     """Collects news from RSS feeds using only standard library."""
-    
+
     def __init__(self, database: Database):
         self.database = database
         self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
-            'DNT': '1',
-            'Connection': 'keep-alive'
+            'User-Agent': 'AI-News-Collector/1.0 (Simple RSS Reader)'
         }
-    
-    def clean_html(self, html_content: str) -> str:
-        """Remove HTML tags using secure sanitization."""
-        return clean_text_content(html_content)
-    
-    def is_ai_relevant(self, title: str, content: str, keywords: List[str]) -> tuple[bool, List[str]]:
-        """Check if content is AI-related based on enhanced keyword matching."""
-        text = (title + " " + content).lower()
-        found_keywords = []
-        
-        # Keyword variations for common AI terms
-        keyword_variations = {
-            'ai': ['ai', 'a.i.', 'artificial intelligence'],
-            'ml': ['ml', 'machine learning'],
-            'dl': ['dl', 'deep learning'],
-            'nlp': ['nlp', 'natural language processing'],
-            'llm': ['llm', 'large language model'],
-            'gpt': ['gpt', 'chatgpt', 'gpt-3', 'gpt-4'],
-            'api': ['api', 'application programming interface']
-        }
-        
-        for keyword in keywords:
-            keyword_lower = keyword.lower()
-            
-            # 1. Direct word boundary matching (prevents "ai" matching "saint")
-            if self._matches_word_boundary(keyword_lower, text):
-                found_keywords.append(keyword)
-                continue
-                
-            # 2. Check variations
-            if keyword_lower in keyword_variations:
-                for variation in keyword_variations[keyword_lower]:
-                    if self._matches_word_boundary(variation, text):
-                        found_keywords.append(keyword)
-                        break
-                        
-            # 3. Basic fuzzy matching for typos (threshold 0.85)
-            if self._fuzzy_match(keyword_lower, text, 0.85):
-                found_keywords.append(f"{keyword} (fuzzy)")
-        
-        return len(found_keywords) > 0, found_keywords
-    
-    def _matches_word_boundary(self, keyword: str, text: str) -> bool:
-        """Check if keyword appears as a whole word in text."""
-        # For patterns with dots, use more flexible matching
-        if '.' in keyword:
-            # Handle A.I., L.L.M., etc.
-            escaped_keyword = re.escape(keyword)
-            pattern = rf'(?<!\w){escaped_keyword}(?!\w)'
-        else:
-            # Standard word boundary matching
-            escaped_keyword = re.escape(keyword)
-            pattern = rf'\b{escaped_keyword}\b'
-        return bool(re.search(pattern, text, re.IGNORECASE))
-    
-    def _fuzzy_match(self, keyword: str, text: str, threshold: float = 0.85) -> bool:
-        """Basic fuzzy matching using SequenceMatcher."""
-        words = text.split()
-        for word in words:
-            similarity = SequenceMatcher(None, keyword, word).ratio()
-            if similarity >= threshold:
-                return True
-        return False
-    
-    def create_summary(self, content: str, max_length: int = 200) -> str:
-        """Create a simple summary by truncating content."""
-        if not content:
-            return ""
-        
-        # Remove extra whitespace
-        content = re.sub(r'\s+', ' ', content).strip()
-        
-        if len(content) <= max_length:
-            return content
-        
-        # Try to end at a sentence boundary
-        truncated = content[:max_length]
-        last_period = truncated.rfind('.')
-        last_exclamation = truncated.rfind('!')
-        last_question = truncated.rfind('?')
-        
-        last_boundary = max(last_period, last_exclamation, last_question)
-        
-        if last_boundary > max_length * 0.7:  # Only cut if we have at least 70% of content
-            return truncated[:last_boundary + 1]
-        
-        return truncated + "..."
-    
+
+    @staticmethod
+    def _check_http_status(response, url: str) -> bool:
+        """Check HTTP response status and return True if OK.
+
+        Prints warning and returns False for error status codes.
+        """
+        try:
+            if hasattr(response, 'status'):
+                status = response.status
+            else:
+                status = response.getcode()
+        except Exception:
+            return True
+
+        if status == 403:
+            print(f"⚠ Access forbidden (403) from {url}")
+            return False
+        elif status == 404:
+            print(f"⚠ Feed not found (404) from {url}")
+            return False
+        elif status >= 400:
+            print(f"⚠ Server error ({status}) from {url}")
+            return False
+
+        return True
+
     def fetch_rss_feed(self, url: str):
+
         """Fetch and parse RSS feed securely."""
         try:
             # Validate URL first
@@ -126,15 +62,19 @@ class SimpleCollector:
             if not is_valid:
                 print(f"URL validation failed for {url}: {error}")
                 return None
-            
+
             # Use safe URL opener
             response = safe_urlopen(url, headers=self.headers, timeout=30)
             if response is None:
                 return None
 
+            # Check HTTP status
+            if not self._check_http_status(response, url):
+                return None
+
             # Read content
-            with response:
-                content_bytes = response.read()
+            with response as resp:
+                content_bytes = resp.read()
                 content = content_bytes.decode('utf-8', errors='ignore')
 
             # Check if response is HTML (blocking page) instead of XML/RSS
@@ -159,87 +99,57 @@ class SimpleCollector:
                 print(f"Error fetching RSS feed from {url}: {e}")
             return None
 
-            # Check HTTP status code - response has .status or .getcode()
-            try:
-                if hasattr(response, 'status'):
-                    status = response.status
-                else:
-                    status = response.getcode()
-            except Exception:
-                status = 0
+    def clean_html(self, html_content: str) -> str:
+        """Remove HTML tags using simple regex."""
+        if not html_content:
+            return ""
 
-            if status == 403:
-                print(f"⚠ Access forbidden (403) from {url}")
-                response.close()
-                return None
-            elif status == 404:
-                print(f"⚠ Feed not found (404) from {url}")
-                response.close()
-                return None
-            elif status >= 400:
-                print(f"⚠ Server error ({status}) from {url}")
-                response.close()
-                return None
+        # Unescape HTML entities
+        content = html.unescape(html_content)
 
-            # Read content
-            try:
-                content_bytes = response.read()
-                content = content_bytes.decode('utf-8', errors='ignore')
-            except Exception as e:
-                print(f"⚠ Failed to read content from {url}: {e}")
-                response.close()
-                return None
-            finally:
-                response.close()
+        # Remove HTML tags
+        content = re.sub(r'<[^>]+>', ' ', content)
 
-            # Check if response is HTML (blocking page) instead of XML/RSS
-            content_lower = content.lower().strip()
-            if content_lower.startswith('<!doctype html>') or content_lower.startswith('<html'):
-                print(f"⚠ Received HTML instead of RSS from {url} (likely blocked)")
-                return None
+        # Clean up whitespace
+        content = re.sub(r'\s+', ' ', content).strip()
 
-            # Parse XML securely
-            root = parse_xml_safe(content)
-            return root
+        return content
 
-        except Exception as e:
-            print(f"Error fetching RSS feed from {url}: {e}")
-            return None
+    def is_ai_relevant(self, title: str, content: str, keywords: List[str]) -> tuple[bool, List[str]]:
+        """Check if content is AI-related based on keywords."""
+        text = (title + " " + content).lower()
+        found_keywords = []
 
-            # Check HTTP status code
-            try:
-                status = response.status  # HTTPResponse has .status
-            except AttributeError:
-                status = response.getcode()  # Fallback for older Python versions
+        for keyword in keywords:
+            if keyword.lower() in text:
+                found_keywords.append(keyword)
 
-            if status == 403:
-                print(f"⚠ Access forbidden (403) from {url}")
-                return None
-            elif status == 404:
-                print(f"⚠ Feed not found (404) from {url}")
-                return None
-            elif status >= 400:
-                print(f"⚠ Server error ({status}) from {url}")
-                return None
+        return len(found_keywords) > 0, found_keywords
 
-            with response:
-                content_bytes = response.read()
-                content = content_bytes.decode('utf-8', errors='ignore')
+    def create_summary(self, content: str, max_length: int = 200) -> str:
+        """Create a simple summary by truncating content."""
+        if not content:
+            return ""
 
-            # Check if response is HTML (blocking page) instead of XML/RSS
-            content_lower = content.lower().strip()
-            if content_lower.startswith('<!doctype html>') or content_lower.startswith('<html'):
-                print(f"⚠ Received HTML instead of RSS from {url} (likely blocked)")
-                return None
+        # Remove extra whitespace
+        content = re.sub(r'\s+', ' ', content).strip()
 
-            # Parse XML securely
-            root = parse_xml_safe(content)
-            return root
-            
-        except Exception as e:
-            print(f"Error fetching RSS feed from {url}: {e}")
-            return None
-    
+        if len(content) <= max_length:
+            return content
+
+        # Try to end at a sentence boundary
+        truncated = content[:max_length]
+        last_period = truncated.rfind('.')
+        last_exclamation = truncated.rfind('!')
+        last_question = truncated.rfind('?')
+
+        last_boundary = max(last_period, last_exclamation, last_question)
+
+        if last_boundary > max_length * 0.7:  # Only cut if we have at least 70% of content
+            return truncated[:last_boundary + 1]
+
+        return truncated + "..."
+
     def parse_rss_item(self, item) -> dict:
         """Parse a single RSS item."""
         data = {}
