@@ -972,22 +972,14 @@ def main():
                 print("="*60)
                 print(f"📋 Topics: {', '.join(topics)}")
 
-                # Validate topics exist in config
-                valid_topics = []
-                for topic in topics:
-                    if topic in config.topics:
-                        valid_topics.append(topic)
-                    else:
-                        print(f"⚠️  Topic '{topic}' not found in config")
-
-                if not valid_topics:
-                    print("❌ No valid topics found. Use 'ai-news topics list' to see available topics.")
-                    return
-
+                # Use topics directly without requiring config validation
+                # Any topic keyword can be used for filtering
+                valid_topics = topics
+                
                 collector = SimpleCollector(database)
                 total_stats = {"feeds_processed": 0, "total_fetched": 0, "total_added": 0, "ai_relevant_added": 0}
 
-                # Collect from all regions but filter by topics
+                # Collect from all regions
                 for region_code, region_config in config.regions.items():
                     if region_config.enabled:
                         region_stats = collector.collect_region(config, region_code)
@@ -1004,10 +996,13 @@ def main():
                 # Show topic-specific stats
                 print(f"\n📈 Topic Relevance:")
                 for topic in valid_topics:
-                    topic_config = config.topics[topic]
-                    articles = database.get_articles_by_keywords(topic_config.keywords, limit=100)
-                    ai_count = sum(1 for a in articles if a.ai_relevant)
-                    print(f"   • {topic}: {len(articles)} articles ({ai_count} AI-relevant)")
+                    # Search articles with this topic in keywords
+                    articles = database.get_articles_by_keywords([topic], limit=100)
+                    if articles:
+                        ai_count = sum(1 for a in articles if a.ai_relevant)
+                        print(f"   • {topic}: {len(articles)} articles ({ai_count} AI-relevant)")
+                    else:
+                        print(f"   • {topic}: No articles found")
 
             # AI-only collection (filter all RSS feeds to AI-relevant only)
             if getattr(args, 'ai_only', False):
@@ -1302,102 +1297,111 @@ def main():
                 use_spacy = not getattr(args, 'no_spacy', False)
                 
                 if use_spacy:
-                    print("Mode: spaCy semantic analysis")
+                    print("Mode: Entity-aware semantic analysis")
                     
-                    try:
-                        # Import SpacyDigestAnalyzer
-                        from .spacy_digest_analyzer import create_spacy_digest_analyzer
-                        
-                        # Initialize analyzer
-                        analyzer = create_spacy_digest_analyzer(
-                            cache_db_path=str(db_path),
-                            ttl_hours=6
-                        )
-                        
-                        if analyzer and analyzer._spacy_available:
-                            # Get articles from database
-                            all_articles = database.get_articles(limit=500)
+                    # Try entity-aware digest first (better if articles have entity tags)
+                    content = _try_entity_aware_digest(database, topics, args.days, args.ai_only)
+                    
+                    if content:
+                        print("✓ Using entity-aware matching (articles have entity tags)")
+                    else:
+                        print("Trying spaCy semantic analysis...")
+                    
+                    if content is None:
+                        try:
+                            # Import SpacyDigestAnalyzer
+                            from .spacy_digest_analyzer import create_spacy_digest_analyzer
                             
-                            # Filter articles by date range
-                            start_date = datetime.now().replace(tzinfo=None) - timedelta(days=args.days)
-                            recent_articles = []
-                            for a in all_articles:
-                                if not a.published_at:
-                                    recent_articles.append(a)
-                                else:
-                                    if a.published_at.tzinfo:
-                                        article_date = a.published_at.astimezone(None).replace(tzinfo=None)
-                                    else:
-                                        article_date = a.published_at
-                                    if article_date >= start_date:
-                                        recent_articles.append(a)
-                            
-                            # Convert articles to dict format for analyzer
-                            articles_dict = [
-                                {
-                                    'id': a.id,
-                                    'title': a.title,
-                                    'content': a.content or '',
-                                    'summary': a.summary or '',
-                                    'url': a.url,
-                                    'source_name': a.source_name,
-                                    'author': a.author,
-                                    'published_at': a.published_at,
-                                    'category': a.category,
-                                    'ai_relevant': a.ai_relevant,
-                                    'ai_keywords_found': a.ai_keywords_found or []
-                                }
-                                for a in recent_articles
-                            ]
-                            
-                            # Analyze with spaCy
-                            print("Analyzing articles with spaCy...")
-                            scored_articles = analyzer.analyze(
-                                articles=articles_dict,
-                                topics=topics,
-                                days=args.days,
-                                use_and_logic=True
+                            # Initialize analyzer
+                            analyzer = create_spacy_digest_analyzer(
+                                cache_db_path=str(db_path),
+                                ttl_hours=6
                             )
-                            
-                            # Check cache status
-                            if hasattr(analyzer, 'cache'):
-                                cache_key = analyzer.cache._generate_cache_key(topics, args.days)
-                                cached = analyzer.cache.get(topics, args.days)
-                                if cached:
-                                    print("Cache: HIT (using cached results)")
-                                else:
-                                    print("Cache: MISS (fresh analysis)")
-                            
-                            # Generate spaCy-powered digest
-                            if scored_articles:
-                                print(f"Found {len(scored_articles)} relevant articles (confidence ≥ 70%)")
-                                content = md_gen.generate_spacy_topic_digest(
-                                    topics=topics,
-                                    scored_articles=scored_articles,
-                                    days=args.days
-                                )
-                            else:
-                                # Fallback to keyword-based if no high-confidence articles
-                                print("No high-confidence matches found, using keyword-based digest")
-                                print("Fallback: Keyword matching")
-                                content = _generate_keyword_topic_digest(md_gen, database, topics, args.days, use_and_logic=False)
                         
-                        else:
-                            # spaCy not available, use keyword mode
-                            print("spaCy not available, using keyword-based analysis")
+                            if analyzer and analyzer._spacy_available:
+                                # Get articles from database
+                                all_articles = database.get_articles(limit=500)
+                                
+                                # Filter articles by date range
+                                start_date = datetime.now().replace(tzinfo=None) - timedelta(days=args.days)
+                                recent_articles = []
+                                for a in all_articles:
+                                    if not a.published_at:
+                                        recent_articles.append(a)
+                                    else:
+                                        if a.published_at.tzinfo:
+                                            article_date = a.published_at.astimezone(None).replace(tzinfo=None)
+                                        else:
+                                            article_date = a.published_at
+                                        if article_date >= start_date:
+                                            recent_articles.append(a)
+                                
+                                # Convert articles to dict format for analyzer
+                                articles_dict = [
+                                    {
+                                        'id': a.id,
+                                        'title': a.title,
+                                        'content': a.content or '',
+                                        'summary': a.summary or '',
+                                        'url': a.url,
+                                        'source_name': a.source_name,
+                                        'author': a.author,
+                                        'published_at': a.published_at,
+                                        'category': a.category,
+                                        'ai_relevant': a.ai_relevant,
+                                        'ai_keywords_found': a.ai_keywords_found or []
+                                    }
+                                    for a in recent_articles
+                                ]
+                                
+                                # Analyze with spaCy
+                                print("Analyzing articles with spaCy...")
+                                scored_articles = analyzer.analyze(
+                                    articles=articles_dict,
+                                    topics=topics,
+                                    days=args.days,
+                                    use_and_logic=True
+                                )
+                                
+                                # Check cache status
+                                if hasattr(analyzer, 'cache'):
+                                    cache_key = analyzer.cache._generate_cache_key(topics, args.days)
+                                    cached = analyzer.cache.get(topics, args.days)
+                                    if cached:
+                                        print("Cache: HIT (using cached results)")
+                                    else:
+                                        print("Cache: MISS (fresh analysis)")
+                                
+                                # Generate spaCy-powered digest
+                                if scored_articles:
+                                    print(f"Found {len(scored_articles)} relevant articles (confidence ≥ 70%)")
+                                    content = md_gen.generate_spacy_topic_digest(
+                                        topics=topics,
+                                        scored_articles=scored_articles,
+                                        days=args.days
+                                    )
+                                else:
+                                    # Fallback to keyword-based if no high-confidence articles
+                                    print("No high-confidence matches found, using keyword-based digest")
+                                    print("Fallback: Keyword matching")
+                                    content = _generate_keyword_topic_digest(md_gen, database, topics, args.days, use_and_logic=False, ai_only=args.ai_only)
+
+                            else:
+                                # spaCy not available, use keyword mode
+                                print("spaCy not available, using keyword-based analysis")
+                                print("Fallback: Keyword matching")
+                                content = _generate_keyword_topic_digest(md_gen, database, topics, args.days, use_and_logic=False, ai_only=args.ai_only)
+
+                        except Exception as e:
+                            # Error with spaCy, fallback to keywords
+                            print(f"spaCy analysis failed: {e}")
                             print("Fallback: Keyword matching")
-                            content = _generate_keyword_topic_digest(md_gen, database, topics, args.days, use_and_logic=False)
-                    
-                    except Exception as e:
-                        # Error with spaCy, fallback to keywords
-                        print(f"spaCy analysis failed: {e}")
-                        print("Fallback: Keyword matching")
-                        content = _generate_keyword_topic_digest(md_gen, database, topics, args.days, use_and_logic=False)
-                
+                            content = _generate_keyword_topic_digest(md_gen, database, topics, args.days, use_and_logic=False, ai_only=args.ai_only)
+
                 else:
                     # Keyword-only mode (--no-spacy flag)
                     print("Mode: Keyword-only matching (--no-spacy)")
-                    content = _generate_keyword_topic_digest(md_gen, database, topics, args.days, use_and_logic=False)
+                    content = _generate_keyword_topic_digest(md_gen, database, topics, args.days, use_and_logic=False, ai_only=args.ai_only)
             
             # Display or save the digest
             if args.save:
@@ -3132,7 +3136,34 @@ def handle_cache_command(args, database):
         print("❌ Unknown cache command. Use --help to see available commands.")
 
 
-def _generate_keyword_topic_digest(md_gen: MarkdownGenerator, database: Database, topics: list, days: int, use_and_logic: bool = True) -> str:
+def _try_entity_aware_digest(database: Database, topics: list, days: int, ai_only: bool) -> str:
+    """Try to generate entity-aware digest, returns None if unavailable."""
+    try:
+        from .entity_aware_digest import create_entity_aware_digest_generator
+        
+        entity_gen = create_entity_aware_digest_generator(database)
+        content = entity_gen.generate_topic_digest(topics=topics, days=days, ai_only=ai_only)
+        
+        # Check if digest indicates no articles found
+        if "No articles found" in content:
+            return None
+        
+        # Check if very few articles (entity matching too limited)
+        # Extract article count from digest
+        import re
+        match = re.search(r'Total articles:\s*(\d+)', content)
+        if match:
+            article_count = int(match.group(1))
+            # If less than 3 articles, let spaCy handle it (better semantic matching)
+            if article_count < 3:
+                return None
+        
+        return content
+    except Exception:
+        return None
+
+
+def _generate_keyword_topic_digest(md_gen: MarkdownGenerator, database: Database, topics: list, days: int, use_and_logic: bool = True, ai_only: bool = True) -> str:
     """
     Generate a keyword-based topic digest (fallback when spaCy unavailable or disabled).
 
@@ -3142,6 +3173,7 @@ def _generate_keyword_topic_digest(md_gen: MarkdownGenerator, database: Database
         topics: List of topic keywords
         days: Number of days for analysis
         use_and_logic: If True, articles must match ALL topics (AND). If False, match ANY topic (OR).
+        ai_only: If True, include only AI-relevant articles. If False, include all matching articles.
 
     Returns:
         Markdown digest content
@@ -3153,8 +3185,8 @@ def _generate_keyword_topic_digest(md_gen: MarkdownGenerator, database: Database
 
     if use_and_logic and len(topics) > 1:
         # AND logic: Articles must match ALL topics
-        # Get recent articles (ai_only to get relevant articles)
-        candidate_articles = database.get_articles(limit=5000, ai_only=True)
+        # Get recent articles (respecting ai_only parameter)
+        candidate_articles = database.get_articles(limit=5000, ai_only=ai_only)
 
         # Filter candidates that contain ALL topics (in title, content, or category)
         matching_articles = []
@@ -3166,8 +3198,8 @@ def _generate_keyword_topic_digest(md_gen: MarkdownGenerator, database: Database
 
         unique_articles = matching_articles
     else:
-        # OR logic: Get AI articles and filter by ANY topic match
-        all_articles = database.get_articles(limit=5000, ai_only=True)
+        # OR logic: Get articles and filter by ANY topic match (respecting ai_only parameter)
+        all_articles = database.get_articles(limit=5000, ai_only=ai_only)
 
         # Filter articles that contain AT LEAST ONE topic
         unique_articles = []
@@ -3177,18 +3209,22 @@ def _generate_keyword_topic_digest(md_gen: MarkdownGenerator, database: Database
             if any(topic.lower() in article_text for topic in topics):
                 unique_articles.append(article)
 
-    # Filter by date range
-    recent_articles = []
+    # Filter by date range, separating dated and undated articles
+    dated_articles = []
+    undated_articles = []
     for a in unique_articles:
         if not a.published_at:
-            recent_articles.append(a)
+            undated_articles.append(a)
         else:
             if a.published_at.tzinfo:
                 article_date = a.published_at.astimezone(None).replace(tzinfo=None)
             else:
                 article_date = a.published_at
             if article_date >= start_date:
-                recent_articles.append(a)
+                dated_articles.append(a)
+
+    # Combine: dated articles first, then undated articles at the end
+    recent_articles = dated_articles + undated_articles
 
     if not recent_articles:
         return f"""# Topic Analysis: {topics_str}
@@ -3197,18 +3233,26 @@ def _generate_keyword_topic_digest(md_gen: MarkdownGenerator, database: Database
 *No articles found for '{topics_str}' in the last {days} days.*
 """
 
-    # Sort by date (newest first), handling timezone-aware datetimes
+    # Sort dated articles by date (newest first), undated articles stay at end
     def sort_key(article):
         if article.published_at:
             if article.published_at.tzinfo:
                 return article.published_at.astimezone(None).replace(tzinfo=None)
             return article.published_at
-        return datetime.min
+        return datetime.min  # Undated articles sort to end
 
-    recent_articles.sort(key=sort_key, reverse=True)
+    # Sort only the dated portion
+    dated_articles.sort(key=sort_key, reverse=True)
+    # Recombine with undated at the end
+    recent_articles = dated_articles + undated_articles
+
+    # Count undated articles for stats
+    undated_count = len(undated_articles)
+    dated_count = len(dated_articles)
 
     # Generate digest
     logic_mode = "AND (all topics must match)" if use_and_logic and len(topics) > 1 else "OR (any topic matches)"
+    undated_note = f"\n- **Undated articles:** {undated_count} (shown at end)" if undated_count > 0 else ""
     digest = f"""# Topic Analysis: {topics_str}
 *Last {days} days* - Generated on {datetime.now().strftime('%Y-%m-%d %H:%M')}
 **Method:** Keyword-based matching ({logic_mode})
@@ -3216,6 +3260,7 @@ def _generate_keyword_topic_digest(md_gen: MarkdownGenerator, database: Database
 ## 📈 Overview
 
 - **Total Articles:** {len(recent_articles)}
+- **Dated articles:** {dated_count}{undated_note}
 - **Topics:** {topics_str}
 - **Coverage Period:** {start_date.strftime('%Y-%m-%d')} to {datetime.now().strftime('%Y-%m-%d')}
 

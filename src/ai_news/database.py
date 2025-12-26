@@ -213,8 +213,18 @@ class Database:
                 CREATE INDEX IF NOT EXISTS idx_region ON articles(region)
             """)
     
-    def save_article(self, article: Article) -> Optional[int]:
-        """Save an article to the database with automatic deduplication."""
+    def save_article(self, article: Article, auto_tag: bool = True) -> Optional[int]:
+        """Save an article to the database with automatic deduplication and entity tagging.
+        
+        Args:
+            article: Article object to save
+            auto_tag: Whether to automatically extract and save entity tags (default: True)
+            
+        Returns:
+            Article ID if saved, existing ID if duplicate, None on error
+        """
+        article_id = None  # Initialize outside try block so it's accessible later
+        
         try:
             with sqlite3.connect(self.db_path) as conn:
                 # Extract canonical URL to prevent duplicates
@@ -230,6 +240,11 @@ class Database:
                     logger.debug(f"Duplicate article skipped: {article.title[:50]}...")
                     return existing[0]
 
+                # Auto-suggest category if empty (based on entities, transparent)
+                if not article.category and auto_tag:
+                    # We'll suggest category after entity extraction
+                    pass
+
                 # Save new article with canonical URL
                 cursor = conn.execute("""
                     INSERT INTO articles 
@@ -244,15 +259,82 @@ class Database:
                     article.author,
                     article.published_at,
                     article.source_name,
-                    article.category,
+                    article.category or 'general',  # Default if empty
                     article.region,
                     article.ai_relevant,
                     ",".join(article.ai_keywords_found or [])
                 ))
-                return cursor.lastrowid
+                
+                article_id = cursor.lastrowid
+                # Don't return yet - need to close connection first, then auto-tag
+                
         except sqlite3.Error as e:
             logger.error(f"Error saving article: {e}")
             return None
+        
+        # Auto-tag with entities AFTER connection closes (avoids database lock)
+        # This runs outside the try/except block so save_article succeeds even if tagging fails
+# DEBUG: auto_tag={auto_tag}, article_id={article_id}")  # DEBUG
+        if auto_tag and article_id:
+            print(f"DEBUG: Calling _auto_tag_article for article {article_id}")  # DEBUG
+            try:
+                self._auto_tag_article(article_id, article)
+            except Exception as e:
+                # Tagging failure shouldn't prevent article from being saved
+                logger.warning(f"Auto-tagging failed for article {article_id}: {e}")
+        
+        # Return article_id after auto-tagging attempt
+        return article_id
+
+    def _auto_tag_article(self, article_id: int, article: Article):
+        """Automatically tag article with entities.
+        
+        This method is called automatically during save_article.
+        Transparent operation - no user action needed.
+        
+        Args:
+            article_id: ID of saved article
+            article: Article object
+        """
+# DEBUG: _auto_tag_article called for article {article_id}")
+        try:
+            from .article_tagger import get_article_tagger
+            
+            tagger = get_article_tagger()
+            tags = tagger.tag_article(article)
+            print(f"DEBUG: tag_article returned {len(tags)} tags")
+            
+            if tags:
+                tagger.save_tags(article_id, tags, self)
+                logger.info(f"Auto-tagged article {article_id} with {len(tags)} entities")
+                
+                # Update category if it was empty
+                if not article.category or article.category == 'general':
+                    suggested = tagger.suggest_category(tags)
+                    if suggested and suggested != 'general':
+                        self._update_article_category(article_id, suggested)
+                        logger.info(f"Auto-categorized article {article_id} as '{suggested}'")
+                        
+        except Exception as e:
+            # Don't fail the save if tagging fails
+            logger.warning(f"Auto-tagging failed for article {article_id}: {e}")
+
+    def _update_article_category(self, article_id: int, category: str):
+        """Update article category.
+        
+        Args:
+            article_id: Article ID
+            category: New category
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute(
+                    "UPDATE articles SET category = ? WHERE id = ?",
+                    (category, article_id)
+                )
+                conn.commit()
+        except sqlite3.Error as e:
+            logger.error(f"Error updating category for article {article_id}: {e}")
 
     def _extract_canonical_url(self, url: str) -> str:
         """Extract canonical URL from tracking/redirect URLs.
@@ -487,6 +569,80 @@ class Database:
                 )
                 for row in rows
             ]
+    
+    def get_articles_by_keywords(self, keywords: List[str], limit: int = 100, search_content: bool = True) -> List[Article]:
+        """Get articles matching any of the given keywords.
+
+        Searches in:
+        - ai_keywords_found field (comma-separated keywords from collection)
+        - title, summary, and content (if search_content=True)
+
+        Args:
+            keywords: List of keywords to search for
+            limit: Maximum number of articles to return
+            search_content: If True, also search in title, summary, and content
+
+        Returns:
+            List of Article objects
+        """
+        if not keywords:
+            return []
+
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+
+                # Build query for keyword matching
+                # Search in multiple fields for broader matching
+                conditions = []
+                params = []
+
+                for keyword in keywords:
+                    # Search in ai_keywords_found field (exact keyword match)
+                    conditions.append("ai_keywords_found LIKE ?")
+                    params.append(f"%{keyword}%")
+
+                    # Also search in title, summary, and content for broader topic matching
+                    if search_content:
+                        conditions.append("LOWER(title) LIKE LOWER(?)")
+                        params.append(f"%{keyword}%")
+                        conditions.append("LOWER(summary) LIKE LOWER(?)")
+                        params.append(f"%{keyword}%")
+                        conditions.append("LOWER(content) LIKE LOWER(?)")
+                        params.append(f"%{keyword}%")
+
+                params.append(limit)
+
+                query = f"""
+                    SELECT DISTINCT * FROM articles
+                    WHERE ({' OR '.join(conditions)})
+                    ORDER BY published_at DESC
+                    LIMIT ?
+                """
+
+                rows = conn.execute(query, params).fetchall()
+
+                return [
+                    Article(
+                        id=row['id'],
+                        title=row['title'],
+                        content=row['content'],
+                        summary=row['summary'],
+                        url=row['url'],
+                        author=row['author'] or "",
+                        published_at=datetime.fromisoformat(row['published_at']) if row['published_at'] else None,
+                        source_name=row['source_name'] or "",
+                        category=row['category'] or "",
+                        region=row['region'] or "global",
+                        ai_relevant=bool(row['ai_relevant']),
+                        ai_keywords_found=row['ai_keywords_found'].split(",") if row['ai_keywords_found'] else []
+                    )
+                    for row in rows
+                ]
+
+        except sqlite3.Error as e:
+            logger.error(f"Error getting articles by keywords: {e}")
+            return []
     
     def get_stats(self, region: Optional[str] = None) -> Dict[str, Any]:
         """Get database statistics with optional region filtering."""
@@ -969,4 +1125,136 @@ class Database:
             return {
                 'total_orphaned': 0,
                 'by_type': {}
+            }
+
+    # ============================================================================
+    # Article Entity Tags Methods
+    # ============================================================================
+
+    def get_article_entity_tags(self, article_id: int) -> List[Dict[str, Any]]:
+        """Get all entity tags for an article.
+        
+        Args:
+            article_id: Article ID
+            
+        Returns:
+            List of entity tag dictionaries
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                
+                tags = conn.execute("""
+                    SELECT entity_text, entity_type, confidence, source, created_at
+                    FROM article_entity_tags
+                    WHERE article_id = ?
+                    ORDER BY confidence DESC
+                """, (article_id,)).fetchall()
+                
+                return [dict(tag) for tag in tags]
+                
+        except sqlite3.Error as e:
+            logger.error(f"Error getting entity tags for article {article_id}: {e}")
+            return []
+
+    def get_articles_by_entity(self, entity_text: str, 
+                                entity_type: Optional[str] = None,
+                                limit: int = 100) -> List[Article]:
+        """Get articles that mention a specific entity.
+        
+        Args:
+            entity_text: Entity name to search for
+            entity_type: Optional entity type filter
+            limit: Maximum number of articles to return
+            
+        Returns:
+            List of Article objects
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                
+                if entity_type:
+                    results = conn.execute("""
+                        SELECT a.*
+                        FROM articles a
+                        JOIN article_entity_tags t ON a.id = t.article_id
+                        WHERE t.entity_text = ? AND t.entity_type = ?
+                        ORDER BY t.confidence DESC
+                        LIMIT ?
+                    """, (entity_text, entity_type, limit)).fetchall()
+                else:
+                    results = conn.execute("""
+                        SELECT a.*
+                        FROM articles a
+                        JOIN article_entity_tags t ON a.id = t.article_id
+                        WHERE t.entity_text = ?
+                        ORDER BY t.confidence DESC
+                        LIMIT ?
+                    """, (entity_text, limit)).fetchall()
+                
+                articles = []
+                for row in results:
+                    article = self._row_to_article(row)
+                    articles.append(article)
+                
+                return articles
+                
+        except sqlite3.Error as e:
+            logger.error(f"Error getting articles for entity '{entity_text}': {e}")
+            return []
+
+    def get_entity_stats(self, days: int = 30) -> Dict[str, Any]:
+        """Get statistics about entity tags.
+        
+        Args:
+            days: Number of days to look back
+            
+        Returns:
+            Dictionary with entity statistics
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                
+                cutoff_date = (datetime.now() - timedelta(days=days)).isoformat()
+                
+                # Total tagged articles
+                total_tagged = conn.execute("""
+                    SELECT COUNT(DISTINCT article_id)
+                    FROM article_entity_tags
+                    WHERE created_at >= ?
+                """, (cutoff_date,)).fetchone()[0]
+                
+                # Top entities by type
+                top_companies = conn.execute("""
+                    SELECT entity_text, COUNT(*) as count
+                    FROM article_entity_tags
+                    WHERE entity_type = 'company' AND created_at >= ?
+                    GROUP BY entity_text
+                    ORDER BY count DESC
+                    LIMIT 10
+                """, (cutoff_date,)).fetchall()
+                
+                top_products = conn.execute("""
+                    SELECT entity_text, COUNT(*) as count
+                    FROM article_entity_tags
+                    WHERE entity_type = 'product' AND created_at >= ?
+                    GROUP BY entity_text
+                    ORDER BY count DESC
+                    LIMIT 10
+                """, (cutoff_date,)).fetchall()
+                
+                return {
+                    'total_tagged_articles': total_tagged,
+                    'top_companies': [dict(row) for row in top_companies],
+                    'top_products': [dict(row) for row in top_products]
+                }
+                
+        except sqlite3.Error as e:
+            logger.error(f"Error getting entity stats: {e}")
+            return {
+                'total_tagged_articles': 0,
+                'top_companies': [],
+                'top_products': []
             }

@@ -115,14 +115,15 @@ class SpacyDigestAnalyzer:
         # Step 2: Semantic analysis and scoring
         scored_articles = self._analyze_articles(filtered_articles, topics, use_and_logic)
 
-        # Step 3: Filter by confidence threshold
+        # Step 3: Cache ALL scored articles (not just high confidence)
+        # This ensures cache works even when articles score below threshold
+        self._cache_results(topics, days, scored_articles, cache_key_suffix)
+
+        # Step 4: Filter by confidence threshold for return value
         high_confidence = [
             article for article in scored_articles
             if article.confidence >= self.CONFIDENCE_THRESHOLD
         ]
-
-        # Step 4: Cache results
-        self._cache_results(topics, days, high_confidence, cache_key_suffix)
 
         return high_confidence
 
@@ -310,6 +311,29 @@ class SpacyDigestAnalyzer:
         
         return confidence
 
+    def _serialize_article(self, article: Dict) -> Dict:
+        """
+        Convert article dict to JSON-serializable format.
+        
+        Handles datetime objects by converting to ISO format strings.
+        
+        Args:
+            article: Article dictionary potentially with datetime objects
+            
+        Returns:
+            JSON-serializable article dictionary
+        """
+        serialized = {}
+        for key, value in article.items():
+            if isinstance(value, datetime):
+                serialized[key] = value.isoformat()
+            elif isinstance(value, (dict, list, str, int, float, bool, type(None))):
+                serialized[key] = value
+            else:
+                # Convert other types to string
+                serialized[key] = str(value)
+        return serialized
+    
     def _cache_results(
         self,
         topics: List[str],
@@ -333,7 +357,7 @@ class SpacyDigestAnalyzer:
             results = {
                 "scored_articles": [
                     {
-                        "article": article.article,
+                        "article": self._serialize_article(article.article),
                         "confidence": article.confidence,
                         "matched_entities": list(article.matched_entities)
                     }

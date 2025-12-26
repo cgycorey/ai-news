@@ -192,7 +192,32 @@ class MigrationManager:
                     CREATE INDEX IF NOT EXISTS idx_region ON articles(region);
                 """
             },
-            4: {
+            5: {
+                "description": "Add article auto-tagging table for entity extraction",
+                "sql": """
+                    -- Article auto-tagging table
+                    -- Stores entity tags extracted from articles during collection
+                    CREATE TABLE IF NOT EXISTS article_entity_tags (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        article_id INTEGER NOT NULL,
+                        entity_text TEXT NOT NULL,
+                        entity_type TEXT NOT NULL CHECK (entity_type IN ('company', 'product', 'technology', 'person')),
+                        confidence REAL NOT NULL CHECK (confidence >= 0.0 AND confidence <= 1.0),
+                        source TEXT NOT NULL CHECK (source IN ('spacy', 'pattern', 'known', 'discovered')),
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(article_id, entity_text, entity_type),
+                        FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE
+                    );
+                    
+                    -- Indexes for performance
+                    CREATE INDEX IF NOT EXISTS idx_article_entity_tags_article_id ON article_entity_tags(article_id);
+                    CREATE INDEX IF NOT EXISTS idx_article_entity_tags_entity_text ON article_entity_tags(entity_text);
+                    CREATE INDEX IF NOT EXISTS idx_article_entity_tags_entity_type ON article_entity_tags(entity_type);
+                    CREATE INDEX IF NOT EXISTS idx_article_entity_tags_confidence ON article_entity_tags(confidence);
+                    CREATE INDEX IF NOT EXISTS idx_article_entity_tags_source ON article_entity_tags(source);
+                """
+            },
+            6: {
                 "description": "Add dynamic feed discovery cache tables",
                 "sql": """
                     -- Discovered feeds cache table

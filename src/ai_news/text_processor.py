@@ -88,10 +88,12 @@ except ImportError:
     def ensure_nltk_data_lazy(package_id: str, resource_path: str) -> bool:
         """Fallback NLTK data checker."""
         try:
+            import nltk
             nltk.data.find(resource_path)
             return True
-        except LookupError:
+        except (ImportError, LookupError):
             try:
+                import nltk
                 nltk.download(package_id, quiet=True)
                 nltk.data.find(resource_path)
                 return True
