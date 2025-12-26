@@ -960,7 +960,7 @@ def main():
                     )
                     total_articles += result['count']
 
-                print(f"\n✅ Websearch complete: {total_articles} AI-relevant articles")
+                print(f"\n🔍 Websearch: {total_articles} AI-relevant articles collected")
                 print("✓ All articles are topic-focused and AI-relevant")
 
             # Topic-focused RSS collection (always runs after websearch if topics specified)

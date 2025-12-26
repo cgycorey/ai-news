@@ -104,7 +104,14 @@ class Database:
                 # Find and remove duplicates
                 logger.info("🔍 Running automatic deduplication...")
 
-                # Get all articles with Bing tracking URLs
+                # Check if metadata table exists (defensive programming)
+                try:
+                    conn.execute("SELECT 1 FROM metadata LIMIT 1")
+                except sqlite3.OperationalError:
+                    # Metadata table doesn't exist yet, skip deduplication
+                    return
+
+                # Get all articles with Bing tracking URLs (batch processing for memory efficiency)
                 cursor = conn.execute("""
                     SELECT id, url, title
                     FROM articles
@@ -133,7 +140,7 @@ class Database:
                         else:
                             canonical = url
                         canonical_groups[canonical].append((article_id, title))
-                    except:
+                    except Exception:
                         canonical_groups[url].append((article_id, title))
 
                 # Find duplicates (keep first, delete rest)
