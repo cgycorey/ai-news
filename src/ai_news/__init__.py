@@ -8,8 +8,6 @@ from .database import (
     Database
 )
 
-from .intelligence_db import IntelligenceDB
-
 from .migrations import (
     MigrationManager,
     migrate_database,
@@ -24,9 +22,6 @@ __all__ = [
     "Topic",
     "EntityMention",
     "Database",
-    
-    # Intelligence layer
-    "IntelligenceDB",
     
     # Migrations
     "MigrationManager",
