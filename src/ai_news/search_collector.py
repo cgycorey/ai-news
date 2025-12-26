@@ -541,14 +541,15 @@ class SearchEngineCollector:
                                 except ValueError:
                                     pass
 
-                        # Step 4: For DuckDuckGo results ONLY (Bing now has RSS dates)
-                        # Fetch article page as last resort (expensive, rate-limited)
-                        if not published_at and 'DuckDuckGo' in result.get('source', ''):
+                        # Step 4: For SearXNG and DuckDuckGo results, fetch article page as last resort
+                        # This is expensive but necessary for sensible dates
+                        if not published_at and ('DuckDuckGo' in result.get('source', '') or 'SearXNG' in result.get('source', '')):
                             if self._page_fetch_count < self._max_page_fetches:
                                 published_at = self.fetch_article_date(result['url'])
                                 self._page_fetch_count += 1
 
-                        # Note: published_at can be None - digest will show "Unknown"
+                        # Note: published_at can be None - these will show "Unknown" and rank last
+                        # This is better than fake dates which pollute freshness sorting
 
                         # Extract canonical URL to avoid duplicate tracking URLs
                         original_url = result['url']
