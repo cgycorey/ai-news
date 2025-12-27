@@ -92,6 +92,8 @@ class Article:
     region: str = "global"
     ai_relevant: bool = False
     ai_keywords_found: Optional[List[str]] = None
+    ai_confidence: float = 0.0
+    ai_review_status: str = 'auto'
 
 
 @dataclass
@@ -158,6 +160,8 @@ class Database:
         # Thread-safe initialization
         with self._init_lock:
             self.init_database()
+            # Migrate database schema
+            self.migrate_add_confidence_columns()
             # Automatic deduplication on first init
             self._auto_deduplicate()
 
@@ -245,6 +249,27 @@ class Database:
         except Exception as e:
             logger.warning(f"Auto-deduplication failed: {e}")
 
+    def migrate_add_confidence_columns(self):
+        """Migrate existing database to add confidence columns."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                # Check if columns already exist
+                cursor = conn.execute("PRAGMA table_info(articles)")
+                existing_columns = {row[1] for row in cursor.fetchall()}
+
+                if 'ai_confidence' not in existing_columns:
+                    conn.execute("ALTER TABLE articles ADD COLUMN ai_confidence REAL DEFAULT 0.0")
+                    logger.info("Added ai_confidence column")
+                if 'ai_review_status' not in existing_columns:
+                    conn.execute("ALTER TABLE articles ADD COLUMN ai_review_status TEXT DEFAULT 'auto'")
+                    logger.info("Added ai_review_status column")
+
+                conn.commit()
+                return True
+        except sqlite3.Error as e:
+            logger.error(f"Migration failed: {e}")
+            return False
+
     def init_database(self):
         """Initialize database tables."""
         with sqlite3.connect(self.db_path) as conn:
@@ -262,6 +287,8 @@ class Database:
                     region TEXT DEFAULT 'global',
                     ai_relevant BOOLEAN DEFAULT FALSE,
                     ai_keywords_found TEXT,
+                    ai_confidence REAL DEFAULT 0.0,
+                    ai_review_status TEXT DEFAULT 'auto',
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
