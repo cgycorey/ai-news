@@ -20,7 +20,8 @@ logger = logging.getLogger(__name__)
 class Entity:
     """Entity with metadata."""
     name: str
-    entity_type: str
+    entity_type: str = ""
+    normalized_name: Optional[str] = None  # Normalized/lowercase version for matching
     confidence: float = 0.8
     aliases: List[str] = field(default_factory=list)
     description: str = ""
@@ -29,6 +30,12 @@ class Entity:
     updated_at: datetime = field(default_factory=datetime.now)
     mention_count: int = 0
     last_seen: Optional[datetime] = None
+    
+    def __post_init__(self):
+        """Generate normalized_name if not provided."""
+        if self.normalized_name is None and self.name:
+            # Normalize: lowercase, remove extra whitespace, remove special chars
+            self.normalized_name = re.sub(r'[^a-z0-9\s]', '', self.name.lower().strip())
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -335,10 +342,11 @@ class EntityManager:
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute("""
                     INSERT OR REPLACE INTO entities 
-                    (name, entity_type, description, aliases, metadata, confidence_score, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    (name, normalized_name, entity_type, description, aliases, metadata, confidence_score, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     entity.name,
+                    entity.normalized_name or re.sub(r'[^a-z0-9\s]', '', entity.name.lower().strip()),
                     entity.entity_type,
                     entity.description,
                     json.dumps(entity.aliases),

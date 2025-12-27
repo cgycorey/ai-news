@@ -72,10 +72,18 @@ class ArticleTagger:
             logger.error(f"Error extracting entities: {e}")
             entities = []
         
-        # Filter by minimum confidence
+        # Filter by minimum confidence and valid entity types
+        valid_entity_types = {'company', 'product', 'technology', 'person'}
         tags = []
         for entity in entities:
             if entity.confidence >= self.min_confidence:
+                entity_type_value = entity.entity_type.value
+                
+                # Skip entity types that aren't in the database schema
+                if entity_type_value not in valid_entity_types:
+                    logger.debug(f"Skipping entity '{entity.text}' with invalid type '{entity_type_value}'")
+                    continue
+                
                 # Map extraction method to database source values
                 source_map = {
                     'pattern_matching': 'pattern',
@@ -87,7 +95,7 @@ class ArticleTagger:
                 
                 tag = EntityTag(
                     entity_text=entity.text,
-                    entity_type=entity.entity_type.value,
+                    entity_type=entity_type_value,
                     confidence=entity.confidence,
                     source=source
                 )

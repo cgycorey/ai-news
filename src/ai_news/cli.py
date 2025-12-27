@@ -1293,110 +1293,33 @@ def main():
                 # Smart auto-collection: collect fresh articles if data is stale
                 _check_and_collect_fresh_data(database, args.days)
 
-                # Check if spaCy mode is enabled (default: yes, unless --no-spacy)
                 use_spacy = not getattr(args, 'no_spacy', False)
                 
                 if use_spacy:
-                    print("Mode: Entity-aware semantic analysis")
+                    print("Mode: Unified entity-aware + spaCy semantic analysis")
                     
-                    # Try entity-aware digest first (better if articles have entity tags)
-                    content = _try_entity_aware_digest(database, topics, args.days, args.ai_only)
-                    
-                    if content:
-                        print("✓ Using entity-aware matching (articles have entity tags)")
-                    else:
-                        print("Trying spaCy semantic analysis...")
-                    
-                    if content is None:
-                        try:
-                            # Import SpacyDigestAnalyzer
-                            from .spacy_digest_analyzer import create_spacy_digest_analyzer
-                            
-                            # Initialize analyzer
-                            analyzer = create_spacy_digest_analyzer(
-                                cache_db_path=str(db_path),
-                                ttl_hours=6
-                            )
+                    try:
+                        from .unified_digest import create_unified_digest_generator
                         
-                            if analyzer and analyzer._spacy_available:
-                                # Get articles from database
-                                all_articles = database.get_articles(limit=500)
-                                
-                                # Filter articles by date range
-                                start_date = datetime.now().replace(tzinfo=None) - timedelta(days=args.days)
-                                recent_articles = []
-                                for a in all_articles:
-                                    if not a.published_at:
-                                        recent_articles.append(a)
-                                    else:
-                                        if a.published_at.tzinfo:
-                                            article_date = a.published_at.astimezone(None).replace(tzinfo=None)
-                                        else:
-                                            article_date = a.published_at
-                                        if article_date >= start_date:
-                                            recent_articles.append(a)
-                                
-                                # Convert articles to dict format for analyzer
-                                articles_dict = [
-                                    {
-                                        'id': a.id,
-                                        'title': a.title,
-                                        'content': a.content or '',
-                                        'summary': a.summary or '',
-                                        'url': a.url,
-                                        'source_name': a.source_name,
-                                        'author': a.author,
-                                        'published_at': a.published_at,
-                                        'category': a.category,
-                                        'ai_relevant': a.ai_relevant,
-                                        'ai_keywords_found': a.ai_keywords_found or []
-                                    }
-                                    for a in recent_articles
-                                ]
-                                
-                                # Analyze with spaCy
-                                print("Analyzing articles with spaCy...")
-                                scored_articles = analyzer.analyze(
-                                    articles=articles_dict,
-                                    topics=topics,
-                                    days=args.days,
-                                    use_and_logic=True
-                                )
-                                
-                                # Check cache status
-                                if hasattr(analyzer, 'cache'):
-                                    cache_key = analyzer.cache._generate_cache_key(topics, args.days)
-                                    cached = analyzer.cache.get(topics, args.days)
-                                    if cached:
-                                        print("Cache: HIT (using cached results)")
-                                    else:
-                                        print("Cache: MISS (fresh analysis)")
-                                
-                                # Generate spaCy-powered digest
-                                if scored_articles:
-                                    print(f"Found {len(scored_articles)} relevant articles (confidence ≥ 70%)")
-                                    content = md_gen.generate_spacy_topic_digest(
-                                        topics=topics,
-                                        scored_articles=scored_articles,
-                                        days=args.days
-                                    )
-                                else:
-                                    # Fallback to keyword-based if no high-confidence articles
-                                    print("No high-confidence matches found, using keyword-based digest")
-                                    print("Fallback: Keyword matching")
-                                    content = _generate_keyword_topic_digest(md_gen, database, topics, args.days, use_and_logic=False, ai_only=args.ai_only)
-
-                            else:
-                                # spaCy not available, use keyword mode
-                                print("spaCy not available, using keyword-based analysis")
-                                print("Fallback: Keyword matching")
-                                content = _generate_keyword_topic_digest(md_gen, database, topics, args.days, use_and_logic=False, ai_only=args.ai_only)
-
-                        except Exception as e:
-                            # Error with spaCy, fallback to keywords
-                            print(f"spaCy analysis failed: {e}")
-                            print("Fallback: Keyword matching")
+                        generator = create_unified_digest_generator(database, cache_ttl_hours=6)
+                        
+                        content = generator.generate_digest(
+                            topics=topics,
+                            days=args.days,
+                            ai_only=args.ai_only,
+                            use_spacy=True,
+                            min_confidence=0.3,
+                            use_and_logic=True
+                        )
+                        
+                        if "No articles found" in content:
+                            print("No high-confidence matches, trying keyword fallback")
                             content = _generate_keyword_topic_digest(md_gen, database, topics, args.days, use_and_logic=False, ai_only=args.ai_only)
+                    
+                    except Exception as e:
+                        print(f"Unified digest failed: {e}")
+                        print("Fallback: Keyword matching")
+                        content = _generate_keyword_topic_digest(md_gen, database, topics, args.days, use_and_logic=False, ai_only=args.ai_only)
 
                 else:
                     # Keyword-only mode (--no-spacy flag)
@@ -3136,31 +3059,7 @@ def handle_cache_command(args, database):
         print("❌ Unknown cache command. Use --help to see available commands.")
 
 
-def _try_entity_aware_digest(database: Database, topics: list, days: int, ai_only: bool) -> str:
-    """Try to generate entity-aware digest, returns None if unavailable."""
-    try:
-        from .entity_aware_digest import create_entity_aware_digest_generator
-        
-        entity_gen = create_entity_aware_digest_generator(database)
-        content = entity_gen.generate_topic_digest(topics=topics, days=days, ai_only=ai_only)
-        
-        # Check if digest indicates no articles found
-        if "No articles found" in content:
-            return None
-        
-        # Check if very few articles (entity matching too limited)
-        # Extract article count from digest
-        import re
-        match = re.search(r'Total articles:\s*(\d+)', content)
-        if match:
-            article_count = int(match.group(1))
-            # If less than 3 articles, let spaCy handle it (better semantic matching)
-            if article_count < 3:
-                return None
-        
-        return content
-    except Exception:
-        return None
+
 
 
 def _generate_keyword_topic_digest(md_gen: MarkdownGenerator, database: Database, topics: list, days: int, use_and_logic: bool = True, ai_only: bool = True) -> str:
