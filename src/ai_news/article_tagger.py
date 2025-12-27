@@ -6,6 +6,7 @@ Zero configuration needed - works transparently in the background.
 
 import logging
 import sqlite3
+import threading
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass
 
@@ -36,6 +37,9 @@ class ArticleTagger:
         tags = tagger.tag_article(article)
         tagger.save_tags(article_id, tags, database)
     """
+    
+    # Class-level lock for thread-safe tag operations
+    _tag_save_lock = threading.Lock()
     
     def __init__(self, entity_extractor: EntityExtractor,
                  min_confidence: float = 0.6):
@@ -106,7 +110,9 @@ class ArticleTagger:
     
     def save_tags(self, article_id: int, tags: List[EntityTag], 
                   database: Database) -> int:
-        """Save entity tags to database.
+        """Save entity tags to database (thread-safe).
+        
+        Uses global database write lock to prevent concurrent write conflicts.
         
         Args:
             article_id: Article ID
@@ -122,41 +128,46 @@ class ArticleTagger:
             logger.debug(f"No tags to save for article {article_id}")
             return 0
         
-        try:
-            with sqlite3.connect(database.db_path) as conn:
-                saved_count = 0
-                
-                for tag in tags:
-                    try:
-                        # Use UPSERT (INSERT OR REPLACE) to handle duplicates
-                        conn.execute("""
-                            INSERT OR REPLACE INTO article_entity_tags 
-                            (article_id, entity_text, entity_type, confidence, source)
-                            VALUES (?, ?, ?, ?, ?)
-                        """, (
-                            article_id,
-                            tag.entity_text,
-                            tag.entity_type,
-                            tag.confidence,
-                            tag.source
-                        ))
-                        saved_count += 1
-                        print(f"DEBUG: Saved tag {tag.entity_text}")  # DEBUG
-                        
-                    except sqlite3.IntegrityError as e:
-                        logger.debug(f"Duplicate tag for article {article_id}: {tag.entity_text}")
-                        print(f"DEBUG: Duplicate tag {tag.entity_text}: {e}")  # DEBUG
-                    except Exception as e:
-                        print(f"DEBUG: Error saving tag {tag.entity_text}: {e}")  # DEBUG
-                
-                conn.commit()
-                logger.info(f"Saved {saved_count} entity tags for article {article_id}")
-                return saved_count
-                
-        except sqlite3.Error as e:
-            logger.error(f"Database error saving tags for article {article_id}: {e}")
-            print(f"DEBUG: Database error: {e}")  # DEBUG
-            return 0
+        # Use global database write lock to prevent concurrent tag saves (SQLite limitation)
+        with database._write_lock:
+            try:
+                with sqlite3.connect(database.db_path) as conn:
+                    # Use WAL mode for better concurrency
+                    conn.execute('PRAGMA journal_mode=WAL')
+
+                    saved_count = 0
+
+                    for tag in tags:
+                        try:
+                            # Use UPSERT (INSERT OR REPLACE) to handle duplicates
+                            conn.execute("""
+                                INSERT OR REPLACE INTO article_entity_tags
+                                (article_id, entity_text, entity_type, confidence, source)
+                                VALUES (?, ?, ?, ?, ?)
+                            """, (
+                                article_id,
+                                tag.entity_text,
+                                tag.entity_type,
+                                tag.confidence,
+                                tag.source
+                            ))
+                            saved_count += 1
+                            print(f"DEBUG: Saved tag {tag.entity_text}")
+
+                        except sqlite3.IntegrityError as e:
+                            logger.debug(f"Duplicate tag for article {article_id}: {tag.entity_text}")
+                            print(f"DEBUG: Duplicate tag {tag.entity_text}: {e}")
+                        except Exception as e:
+                            print(f"DEBUG: Error saving tag {tag.entity_text}: {e}")
+
+                    conn.commit()
+                    logger.info(f"Saved {saved_count} entity tags for article {article_id}")
+                    return saved_count
+
+            except sqlite3.Error as e:
+                logger.error(f"Database error saving tags for article {article_id}: {e}")
+                print(f"DEBUG: Database error: {e}")
+                return 0
     
     def suggest_category(self, tags: List[EntityTag]) -> Optional[str]:
         """Suggest article category based on entity tags.

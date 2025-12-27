@@ -4,12 +4,77 @@ import sqlite3
 import shutil
 import json
 import logging
+import threading
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 from pathlib import Path
+from collections import defaultdict
 
 logger = logging.getLogger(__name__)
+
+
+def sanitize_text(text: str, max_length: int = 10000) -> str:
+    """Sanitize text input to prevent SQL injection and XSS.
+    
+    Args:
+        text: Text to sanitize
+        max_length: Maximum allowed length
+        
+    Returns:
+        Sanitized text
+    """
+    if not text:
+        return ""
+    
+    import re
+    from html import escape
+    
+    # Remove null bytes and control characters (except newline/tab)
+    text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', text)
+    
+    # HTML escape to prevent XSS
+    text = escape(text, quote=False)
+    
+    # Limit length
+    return text[:max_length].strip()
+
+
+def validate_url(url: str) -> str:
+    """Validate and normalize URL.
+    
+    Args:
+        url: URL to validate
+        
+    Returns:
+        Normalized URL
+        
+    Raises:
+        ValueError: If URL is invalid or dangerous
+    """
+    if not url:
+        raise ValueError("URL cannot be empty")
+    
+    from urllib.parse import urlparse
+    
+    try:
+        parsed = urlparse(url)
+        
+        if not parsed.scheme or not parsed.netloc:
+            raise ValueError("Invalid URL format")
+        
+        if parsed.scheme not in ('http', 'https'):
+            raise ValueError("Only HTTP/HTTPS URLs allowed")
+        
+        # Prevent dangerous URL protocols
+        url_lower = url.lower()
+        if 'javascript:' in url_lower or 'data:' in url_lower:
+            raise ValueError("Dangerous URL protocol detected")
+        
+        return url
+    except Exception as e:
+        raise ValueError(f"Invalid URL: {e}")
 
 
 @dataclass
@@ -71,18 +136,30 @@ class EntityMention:
 
 
 class Database:
-    """Simple SQLite database for storing articles."""
-    
+    """Simple SQLite database for storing articles with thread-safe operations."""
+
+    # Class-level lock for database initialization
+    _init_lock = threading.Lock()
+
     def __init__(self, db_path: str):
         self.db_path = Path(db_path)
+
+        # Instance-level locks for thread-safe operations
+        self._url_locks = defaultdict(threading.Lock)  # Per-URL locks
+        self._global_lock = threading.Lock()  # Global operations lock
+
+        # Use shared global write lock for all database writes
+        from .db_lock import get_db_write_lock
+        self._write_lock = get_db_write_lock()
         
         # Ensure parent directory exists
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         
-        self.init_database()
-
-        # Automatic deduplication on first init
-        self._auto_deduplicate()
+        # Thread-safe initialization
+        with self._init_lock:
+            self.init_database()
+            # Automatic deduplication on first init
+            self._auto_deduplicate()
 
     def _auto_deduplicate(self):
         """Automatically remove duplicate articles from database.
@@ -213,128 +290,232 @@ class Database:
                 CREATE INDEX IF NOT EXISTS idx_region ON articles(region)
             """)
     
+    @contextmanager
+    def _article_transaction(self, url: str):
+        """Get exclusive lock for article URL to prevent concurrent duplicates.
+        
+        This ensures that if two threads try to save the same article simultaneously,
+        only one will succeed in creating it.
+        
+        Args:
+            url: Article URL to lock
+            
+        Yields:
+            None - lock is held during the context
+        """
+        # Use URL hash as lock key (more efficient than full URL string)
+        lock_key = f"article:{hash(url)}"
+        lock = self._url_locks[lock_key]
+        lock.acquire()
+        try:
+            yield
+        finally:
+            lock.release()
+    
     def save_article(self, article: Article, auto_tag: bool = True) -> Optional[int]:
         """Save an article to the database with automatic deduplication and entity tagging.
-        
+
+        Thread-safe: Uses global write lock to prevent concurrent database writes.
+
         Args:
             article: Article object to save
             auto_tag: Whether to automatically extract and save entity tags (default: True)
-            
+
         Returns:
             Article ID if saved, existing ID if duplicate, None on error
         """
-        article_id = None  # Initialize outside try block so it's accessible later
-        
+        article_id = None
+
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                # Extract canonical URL to prevent duplicates
-                canonical_url = self._extract_canonical_url(article.url)
+            # Validate URL first
+            validated_url = validate_url(article.url)
 
-                # Check if article already exists (by canonical URL)
-                existing = conn.execute(
-                    "SELECT id FROM articles WHERE url = ?", (canonical_url,)
-                ).fetchone()
+            # Use per-URL locking to prevent duplicate articles
+            with self._article_transaction(validated_url):
+                # Use GLOBAL write lock to prevent concurrent writes from different URLs
+                with self._write_lock:
+                    with sqlite3.connect(self.db_path, timeout=30.0) as conn:
+                        # Extract canonical URL to prevent duplicates
+                        canonical_url = self._extract_canonical_url(validated_url)
 
-                if existing:
-                    # Article already exists, skip
-                    logger.debug(f"Duplicate article skipped: {article.title[:50]}...")
-                    return existing[0]
+                        # Check if article already exists (by canonical URL)
+                        existing = conn.execute(
+                            "SELECT id FROM articles WHERE url = ?", (canonical_url,)
+                        ).fetchone()
 
-                # Auto-suggest category if empty (based on entities, transparent)
-                if not article.category and auto_tag:
-                    # We'll suggest category after entity extraction
-                    pass
+                        if existing:
+                            # Article already exists, skip
+                            logger.debug(f"Duplicate article skipped: {article.title[:50]}...")
+                            return existing[0]
 
-                # Save new article with canonical URL
-                cursor = conn.execute("""
-                    INSERT INTO articles 
-                    (title, content, summary, url, author, published_at, 
-                     source_name, category, region, ai_relevant, ai_keywords_found)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    article.title,
-                    article.content,
-                    article.summary,
-                    canonical_url,  # Use canonical URL
-                    article.author,
-                    article.published_at,
-                    article.source_name,
-                    article.category or 'general',  # Default if empty
-                    article.region,
-                    article.ai_relevant,
-                    ",".join(article.ai_keywords_found or [])
-                ))
-                
-                article_id = cursor.lastrowid
-                # Don't return yet - need to close connection first, then auto-tag
-                
+                        # Sanitize text inputs to prevent SQL injection and XSS
+                        safe_title = sanitize_text(article.title, max_length=500)
+                        safe_content = sanitize_text(article.content, max_length=50000)
+                        safe_summary = sanitize_text(article.summary, max_length=2000)
+                        safe_author = sanitize_text(article.author, max_length=200)
+                        safe_source = sanitize_text(article.source_name, max_length=200)
+                        safe_category = sanitize_text(article.category or 'general', max_length=100)
+
+                        # Save new article with canonical URL
+                        cursor = conn.execute("""
+                            INSERT INTO articles
+                            (title, content, summary, url, author, published_at,
+                             source_name, category, region, ai_relevant, ai_keywords_found)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            safe_title,
+                            safe_content,
+                            safe_summary,
+                            canonical_url,
+                            safe_author,
+                            article.published_at,
+                            safe_source,
+                            safe_category,
+                            article.region,
+                            article.ai_relevant,
+                            ",".join(article.ai_keywords_found or [])
+                        ))
+
+                        article_id = cursor.lastrowid
+
+                        # Auto-tag within SAME connection and lock to prevent concurrent writes
+                        if auto_tag and article_id:
+                            try:
+                                self._auto_tag_article_in_transaction(article_id, article, conn)
+                            except Exception as e:
+                                logger.warning(f"Auto-tagging failed for article {article_id}: {e}")
+
+                        conn.commit()
+
         except sqlite3.Error as e:
             logger.error(f"Error saving article: {e}")
             return None
-        
-        # Auto-tag with entities AFTER connection closes (avoids database lock)
-        # This runs outside the try/except block so save_article succeeds even if tagging fails
-# DEBUG: auto_tag={auto_tag}, article_id={article_id}")  # DEBUG
-        if auto_tag and article_id:
-            print(f"DEBUG: Calling _auto_tag_article for article {article_id}")  # DEBUG
-            try:
-                self._auto_tag_article(article_id, article)
-            except Exception as e:
-                # Tagging failure shouldn't prevent article from being saved
-                logger.warning(f"Auto-tagging failed for article {article_id}: {e}")
-        
-        # Return article_id after auto-tagging attempt
+
         return article_id
+
+    def _auto_tag_article_in_transaction(self, article_id: int, article: Article, conn):
+        """Auto-tag article within an existing database transaction.
+
+        Args:
+            article_id: ID of saved article
+            article: Article object
+            conn: Active SQLite connection
+        """
+        from .article_tagger import get_article_tagger
+
+        tagger = get_article_tagger()
+        tags = tagger.tag_article(article)
+
+        if tags:
+            saved_count = 0
+            for tag in tags:
+                try:
+                    conn.execute("""
+                        INSERT OR REPLACE INTO article_entity_tags
+                        (article_id, entity_text, entity_type, confidence, source)
+                        VALUES (?, ?, ?, ?, ?)
+                    """, (
+                        article_id,
+                        tag.entity_text,
+                        tag.entity_type,
+                        tag.confidence,
+                        tag.source
+                    ))
+                    saved_count += 1
+                except sqlite3.IntegrityError:
+                    pass
+
+            # Update category if it was empty
+            if not article.category or article.category == 'general':
+                suggested = tagger.suggest_category(tags)
+                if suggested and suggested != 'general':
+                    conn.execute(
+                        "UPDATE articles SET category = ? WHERE id = ?",
+                        (suggested, article_id)
+                    )
+
+            logger.info(f"Auto-tagged article {article_id} with {saved_count} entities")
 
     def _auto_tag_article(self, article_id: int, article: Article):
         """Automatically tag article with entities.
-        
+
         This method is called automatically during save_article.
         Transparent operation - no user action needed.
-        
+
         Args:
             article_id: ID of saved article
             article: Article object
         """
-# DEBUG: _auto_tag_article called for article {article_id}")
         try:
             from .article_tagger import get_article_tagger
-            
+
             tagger = get_article_tagger()
             tags = tagger.tag_article(article)
-            print(f"DEBUG: tag_article returned {len(tags)} tags")
-            
+
             if tags:
-                tagger.save_tags(article_id, tags, self)
-                logger.info(f"Auto-tagged article {article_id} with {len(tags)} entities")
-                
-                # Update category if it was empty
-                if not article.category or article.category == 'general':
-                    suggested = tagger.suggest_category(tags)
-                    if suggested and suggested != 'general':
-                        self._update_article_category(article_id, suggested)
-                        logger.info(f"Auto-categorized article {article_id} as '{suggested}'")
-                        
+                # Save tags WITHIN the same database lock to prevent concurrent writes
+                with self._write_lock:
+                    try:
+                        with sqlite3.connect(self.db_path) as conn:
+                            conn.execute('PRAGMA journal_mode=WAL')
+
+                            saved_count = 0
+                            for tag in tags:
+                                try:
+                                    conn.execute("""
+                                        INSERT OR REPLACE INTO article_entity_tags
+                                        (article_id, entity_text, entity_type, confidence, source)
+                                        VALUES (?, ?, ?, ?, ?)
+                                    """, (
+                                        article_id,
+                                        tag.entity_text,
+                                        tag.entity_type,
+                                        tag.confidence,
+                                        tag.source
+                                    ))
+                                    saved_count += 1
+                                except sqlite3.IntegrityError:
+                                    pass
+
+                            conn.commit()
+
+                            # Update category if it was empty
+                            if not article.category or article.category == 'general':
+                                suggested = tagger.suggest_category(tags)
+                                if suggested and suggested != 'general':
+                                    conn.execute(
+                                        "UPDATE articles SET category = ? WHERE id = ?",
+                                        (suggested, article_id)
+                                    )
+                                    conn.commit()
+
+                        logger.info(f"Auto-tagged article {article_id} with {saved_count} entities")
+
+                    except sqlite3.Error as e:
+                        logger.warning(f"Database error during auto-tagging: {e}")
+
         except Exception as e:
             # Don't fail the save if tagging fails
             logger.warning(f"Auto-tagging failed for article {article_id}: {e}")
 
     def _update_article_category(self, article_id: int, category: str):
         """Update article category.
-        
+
         Args:
             article_id: Article ID
             category: New category
         """
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                conn.execute(
-                    "UPDATE articles SET category = ? WHERE id = ?",
-                    (category, article_id)
-                )
-                conn.commit()
-        except sqlite3.Error as e:
-            logger.error(f"Error updating category for article {article_id}: {e}")
+        # Use global write lock to prevent concurrent write conflicts
+        with self._write_lock:
+            try:
+                with sqlite3.connect(self.db_path) as conn:
+                    conn.execute(
+                        "UPDATE articles SET category = ? WHERE id = ?",
+                        (category, article_id)
+                    )
+                    conn.commit()
+            except sqlite3.Error as e:
+                logger.error(f"Error updating category for article {article_id}: {e}")
 
     def _extract_canonical_url(self, url: str) -> str:
         """Extract canonical URL from tracking/redirect URLs.

@@ -473,6 +473,8 @@ class EntityExtractor:
         Priority:
         1. spaCy NER (most precise, expanded labels) - HIGH PRIORITY
         2. Keyword-based discovery (fallback only, lower priority)
+
+        NOTE: Database writes are disabled during concurrent collection to prevent lock errors.
         """
         discovered = []
 
@@ -559,9 +561,10 @@ class EntityExtractor:
                             }
                         )
 
-                        # Save to database
-                        self.entity_manager.add_entity(new_entity)
-                        logger.info(f"✅ Learned new {config['type']} via spaCy {label}: {entity_name} (conf={confidence:.2f})")
+                        # Skip database save during concurrent collection (prevents lock errors)
+                        # Entities will be discovered in subsequent single-threaded operations
+                        # self.entity_manager.add_entity(new_entity)
+                        logger.debug(f"🔍 Discovered new {config['type']} via spaCy {label}: {entity_name} (conf={confidence:.2f})")
 
                         # Convert to ExtractedEntity
                         discovered.append(ExtractedEntity(
@@ -692,8 +695,9 @@ class EntityExtractor:
                 )
 
                 try:
-                    self.entity_manager.add_entity(new_entity)
-                    logger.info(f"⚠️ Learned entity via keyword fallback: {potential_name} (conf={confidence:.2f})")
+                    # Skip database save during concurrent collection (prevents lock errors)
+                    # self.entity_manager.add_entity(new_entity)
+                    logger.debug(f"🔍 Discovered entity via keyword fallback: {potential_name} (conf={confidence:.2f})")
 
                     start_pos = text.find(potential_name)
                     if start_pos >= 0:

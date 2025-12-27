@@ -87,10 +87,10 @@ class EntityPattern:
 
 class EntityManager:
     """Manages entities dynamically with learning capabilities."""
-    
+
     def __init__(self, entities_dir: str = "entities", db_path: str = "data/production/ai_news.db"):
         """Initialize entity manager.
-        
+
         Args:
             entities_dir: Directory containing entity configuration files
             db_path: Path to SQLite database
@@ -336,25 +336,30 @@ class EntityManager:
             return False
     
     def _save_entity_to_db(self, entity: Entity):
-        """Save entity to database."""
+        """Save entity to database with thread-safe locking."""
         try:
-            import sqlite3
-            with sqlite3.connect(self.db_path) as conn:
-                conn.execute("""
-                    INSERT OR REPLACE INTO entities 
-                    (name, normalized_name, entity_type, description, aliases, metadata, confidence_score, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    entity.name,
-                    entity.normalized_name or re.sub(r'[^a-z0-9\s]', '', entity.name.lower().strip()),
-                    entity.entity_type,
-                    entity.description,
-                    json.dumps(entity.aliases),
-                    json.dumps(entity.metadata),
-                    entity.confidence,
-                    entity.updated_at
-                ))
-        
+            from .db_lock import get_db_write_lock
+
+            # Use shared global database write lock
+            with get_db_write_lock():
+                with sqlite3.connect(self.db_path, timeout=30.0) as conn:
+                    conn.execute('PRAGMA journal_mode=WAL')
+                    conn.execute("""
+                        INSERT OR REPLACE INTO entities
+                        (name, normalized_name, entity_type, description, aliases, metadata, confidence_score, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        entity.name,
+                        entity.normalized_name or re.sub(r'[^a-z0-9\s]', '', entity.name.lower().strip()),
+                        entity.entity_type,
+                        entity.description,
+                        json.dumps(entity.aliases),
+                        json.dumps(entity.metadata),
+                        entity.confidence,
+                        entity.updated_at
+                    ))
+                    conn.commit()
+
         except Exception as e:
             logger.error(f"Error saving entity to database: {e}")
     
