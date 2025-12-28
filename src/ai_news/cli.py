@@ -722,10 +722,12 @@ def main():
     digest_parser.add_argument('--date', help='Date for daily digest (YYYY-MM-DD)')
     digest_parser.add_argument('--days', type=int, default=7, help='Days for topic analysis')
     digest_parser.add_argument('--topic', nargs='+', help='One or more topics for analysis (required for topic digest)')
-    digest_parser.add_argument('--ai-only', action='store_true', help='Include only AI-relevant articles')
+    digest_parser.add_argument('--ai-only', action='store_true', default=True, help='Include only AI-relevant articles (default: True)')
+    digest_parser.add_argument('--all-articles', action='store_true', help='Include all articles, not just AI-relevant')
     digest_parser.add_argument('--save', action='store_true', help='Save digest to file')
     digest_parser.add_argument('--output', default='digests', help='Output directory for saved digests')
-    digest_parser.add_argument('--no-spacy', action='store_true', help='Disable spaCy analysis, use keyword-only mode')
+    digest_parser.add_argument('--keyword-only', action='store_true', help='Use keyword matching instead of semantic embeddings')
+    digest_parser.add_argument('--threshold', type=float, default=0.58, help='Minimum semantic similarity threshold (0.0-1.0, default: 0.58)')
     
     # Enhanced NLP Pipeline commands
     nlp_parser = subparsers.add_parser('nlp', help='Advanced NLP processing commands')
@@ -1349,38 +1351,50 @@ def main():
                 # Smart auto-collection: collect fresh articles if data is stale
                 _check_and_collect_fresh_data(database, args.days)
 
-                use_spacy = not getattr(args, 'no_spacy', False)
+                # Determine AI filter
+                ai_only = args.ai_only and not args.all_articles
+
+                # Check if user explicitly wants keyword-only mode
+                use_keyword_only = getattr(args, 'keyword_only', False)
                 
-                if use_spacy:
-                    print("Mode: Unified entity-aware + spaCy semantic analysis")
+                if use_keyword_only:
+                    # Legacy keyword-only mode
+                    print("Mode: Keyword matching (--keyword-only)")
+                    content = _generate_keyword_topic_digest(md_gen, database, topics, args.days, use_and_logic=False, ai_only=ai_only)
+                else:
+                    # DEFAULT: Semantic matching with FastEmbed
+                    threshold = getattr(args, 'threshold', 0.58)
+                    print(f"Mode: Semantic matching (FastEmbed, threshold={threshold})")
                     
                     try:
-                        from .unified_digest import create_unified_digest_generator
+                        from .semantic_digest import SemanticDigestGenerator
                         
-                        generator = create_unified_digest_generator(database, cache_ttl_hours=6)
+                        generator = SemanticDigestGenerator(database, min_similarity=threshold)
                         
-                        content = generator.generate_digest(
+                        result = generator.generate_digest(
                             topics=topics,
                             days=args.days,
-                            ai_only=args.ai_only,
-                            use_spacy=True,
-                            min_confidence=0.3,
-                            use_and_logic=True
+                            ai_only=ai_only,
+                            top_k=20
                         )
                         
-                        if "No articles found" in content:
-                            print("No high-confidence matches, trying keyword fallback")
-                            content = _generate_keyword_topic_digest(md_gen, database, topics, args.days, use_and_logic=False, ai_only=args.ai_only)
+                        # Format as markdown
+                        content = generator.format_markdown(result)
+                        
+                        # If no results, try keyword fallback
+                        if result['total'] == 0:
+                            print(f"No semantic matches found at threshold {threshold}")
+                            print("Trying keyword fallback...")
+                            content = _generate_keyword_topic_digest(md_gen, database, topics, args.days, use_and_logic=False, ai_only=ai_only)
                     
+                    except ImportError:
+                        print("FastEmbed not available, install with: pip install fastembed")
+                        print("Falling back to keyword matching...")
+                        content = _generate_keyword_topic_digest(md_gen, database, topics, args.days, use_and_logic=False, ai_only=ai_only)
                     except Exception as e:
-                        print(f"Unified digest failed: {e}")
-                        print("Fallback: Keyword matching")
-                        content = _generate_keyword_topic_digest(md_gen, database, topics, args.days, use_and_logic=False, ai_only=args.ai_only)
-
-                else:
-                    # Keyword-only mode (--no-spacy flag)
-                    print("Mode: Keyword-only matching (--no-spacy)")
-                    content = _generate_keyword_topic_digest(md_gen, database, topics, args.days, use_and_logic=False, ai_only=args.ai_only)
+                        print(f"Semantic digest failed: {e}")
+                        print("Falling back to keyword matching...")
+                        content = _generate_keyword_topic_digest(md_gen, database, topics, args.days, use_and_logic=False, ai_only=ai_only)
             
             # Display or save the digest
             if args.save:
