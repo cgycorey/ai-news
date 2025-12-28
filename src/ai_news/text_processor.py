@@ -78,7 +78,7 @@ logger = logging.getLogger(__name__)
 
 # Import NLTK utilities for persistent caching
 try:
-    from .nltk_utils import ensure_nltk_data_lazy
+    from .nltk_utils import ensure_nltk_data_lazy, ensure_nltk_data
     NLTK_UTILS_AVAILABLE = True
 except ImportError:
     NLTK_UTILS_AVAILABLE = False
@@ -99,6 +99,10 @@ except ImportError:
                 return True
             except Exception:
                 return False
+    
+    def ensure_nltk_data():
+        """Fallback for ensure_nltk_data singleton."""
+        return True
 
 # Configure NLTK data paths to avoid path issues
 import os
@@ -163,6 +167,10 @@ class TextProcessor:
         """
         self.spacy_model_name = spacy_model
         self.nlp = None
+        
+        # Ensure NLTK data is available (singleton pattern)
+        ensure_nltk_data()
+        
         # Lazy load NLTK lemmatizer
         try:
             nltk = __import__('nltk')

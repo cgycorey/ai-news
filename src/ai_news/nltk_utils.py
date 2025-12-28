@@ -3,12 +3,17 @@
 import os
 import json
 import logging
+import threading
 from pathlib import Path
-from typing import Dict, Optional, Set
+from typing import Dict, Optional, Set, Any
 import nltk
 from nltk.data import find
 
 logger = logging.getLogger(__name__)
+
+# Module-level state
+_nltk_initialized = False
+_nltk_lock = threading.Lock()
 
 # NLTK data packages required for text processing
 NLTK_PACKAGES = {
@@ -213,7 +218,7 @@ def clear_nltk_cache() -> None:
         cache_file.unlink()
         logger.info("NLTK cache cleared")
 
-def get_nltk_info() -> Dict[str, any]:
+def get_nltk_info() -> Dict[str, Any]:
     """Get information about NLTK setup.
     
     Returns:
@@ -227,3 +232,52 @@ def get_nltk_info() -> Dict[str, any]:
         'package_status': check_nltk_data(),
         'missing_packages': list(get_missing_nltk_packages())
     }
+
+
+def ensure_nltk_data():
+    """
+    Ensure NLTK data is downloaded (singleton pattern).
+    
+    Downloads all required NLTK data packages once and caches the result.
+    Thread-safe with double-check locking.
+    
+    Returns:
+        True if NLTK data is available, False otherwise
+    """
+    global _nltk_initialized
+    
+    # Fast path
+    if _nltk_initialized:
+        return True
+    
+    # Slow path
+    with _nltk_lock:
+        # Double-check
+        if _nltk_initialized:
+            return True
+        
+        try:
+            logger.info("Ensuring NLTK data is available...")
+            
+            # Download all required packages
+            packages = [
+                ('tokenizers', 'punkt'),
+                ('corpora', 'stopwords'),
+                ('corpora', 'wordnet')
+            ]
+            
+            for category, package in packages:
+                try:
+                    nltk.data.find(f'{category}/{package}')
+                    logger.debug(f"NLTK {package} already available")
+                except LookupError:
+                    logger.info(f"Downloading NLTK {package}...")
+                    nltk.download(package, quiet=True)
+            
+            _nltk_initialized = True
+            logger.info("✅ NLTK data ready")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize NLTK: {e}")
+            return False
