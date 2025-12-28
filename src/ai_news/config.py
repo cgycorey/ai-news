@@ -1,7 +1,7 @@
 """Simple configuration management for AI News."""
 
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Set
 from dataclasses import dataclass, field
 import json
 import logging
@@ -104,6 +104,38 @@ class RegionConfig:
 
 
 @dataclass
+class PerformanceConfig:
+    """Performance tuning for NLP features with accuracy preservation."""
+    
+    # Entity extraction modes
+    use_spacy_in_collection: str = "hybrid"  # Options: "full", "hybrid", "pattern-only"
+    
+    # When hybrid mode, use spaCy for these cases
+    spacy_on_low_confidence: bool = True      # Confidence < 0.7
+    spacy_on_no_entities: bool = True         # No entities found by patterns
+    spacy_on_high_value_sources: bool = True  # TechCrunch, MIT, etc.
+    
+    # High-value source list
+    high_value_sources: Set[str] = field(default_factory=lambda: {
+        'techcrunch', 'mit technology review', 'ars technica',
+        'wired', 'the verge', 'hacker news'
+    })
+    
+    # Batch processing
+    spaCy_batch_size: int = 50
+    
+    # Caching
+    enable_entity_cache: bool = True
+    entity_cache_size: int = 10000
+    
+    def __post_init__(self):
+        """Validate configuration."""
+        valid_modes = {"full", "hybrid", "pattern-only"}
+        if self.use_spacy_in_collection not in valid_modes:
+            raise ValueError(f"use_spacy_in_collection must be one of {valid_modes}")
+
+
+@dataclass
 class TopicConfig:
     """Configuration for a single topic with dynamic discovery."""
     name: str
@@ -202,6 +234,9 @@ class Config:
     topics: Dict[str, TopicConfig] = field(default_factory=dict)
     topic_combinations: Dict[str, TopicCombinationConfig] = field(default_factory=dict)
     discovery: DiscoveryConfig = field(default_factory=DiscoveryConfig)
+    
+    # Performance configuration
+    performance: PerformanceConfig = field(default_factory=PerformanceConfig)
     
     def __post_init__(self):
         # Initialize default regions if empty
@@ -566,7 +601,20 @@ class Config:
             regions=regions,
             topics=topics,
             topic_combinations=combinations,
-            discovery=DiscoveryConfig()
+            discovery=DiscoveryConfig(),
+            performance=PerformanceConfig()
         )
         config.feeds = config.get_all_feeds()
         return config
+
+
+# Global config instance
+_global_config: Optional[Config] = None
+
+
+def get_performance_config() -> PerformanceConfig:
+    """Get global performance configuration."""
+    global _global_config
+    if _global_config is None:
+        _global_config = Config()
+    return _global_config.performance
