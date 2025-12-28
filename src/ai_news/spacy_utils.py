@@ -5,8 +5,13 @@ import subprocess
 from typing import Optional, Any
 import logging
 import importlib.util
+import threading
 
 logger = logging.getLogger(__name__)
+
+# Module-level singleton cache
+_nlp_singleton: Optional[Any] = None
+_nlp_lock = threading.Lock()
 
 def is_spacy_available() -> bool:
     """Check if spaCy is installed."""
@@ -152,3 +157,46 @@ def get_spacy_status():
         "model_name": "en_core_web_md"
     }
     return status
+
+
+def get_spacy_model(model_name: str = "en_core_web_sm", auto_download: bool = True) -> Optional[Any]:
+    """Get spaCy model singleton with thread-safe double-check locking.
+    
+    Args:
+        model_name: Name of the spaCy model to load
+        auto_download: Whether to auto-download missing models
+        
+    Returns:
+        spaCy model instance or None if unavailable
+    """
+    global _nlp_singleton
+    
+    # Fast path: already loaded
+    if _nlp_singleton is not None:
+        return _nlp_singleton
+    
+    # Slow path: need to load
+    with _nlp_lock:
+        # Double-check: another thread may have loaded while we waited
+        if _nlp_singleton is not None:
+            return _nlp_singleton
+        
+        try:
+            logger.info(f"Loading spaCy model '{model_name}' (singleton)...")
+            _nlp_singleton = load_spacy_model(model_name, auto_download=auto_download)
+            
+            if _nlp_singleton is not None:
+                logger.info("✅ spaCy model loaded and cached as singleton")
+            else:
+                logger.warning("⚠️ spaCy model not available, using pattern-only extraction")
+                
+        except Exception as e:
+            logger.error(f"Failed to load spaCy model: {e}")
+            _nlp_singleton = None
+    
+    return _nlp_singleton
+
+
+def is_spacy_loaded() -> bool:
+    """Check if spaCy model is loaded in singleton."""
+    return _nlp_singleton is not None
