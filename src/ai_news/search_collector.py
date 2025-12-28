@@ -10,6 +10,8 @@ from typing import List, Dict, Any, Optional
 import html
 import time
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 
 from .config import FeedConfig
 from .database import Article, Database
@@ -59,20 +61,27 @@ def extract_canonical_url(url: str) -> str:
 
 
 class SearchEngineCollector:
-    """Collect articles from search engines for AI + topic queries."""
-    
-    def __init__(self, database: Database):
+    """Collect articles from search engines for AI + topic queries.
+
+    Performance optimizations:
+    - Parallel topic searches
+    - Reduced delays
+    - Optional content fetching
+    """
+
+    def __init__(self, database: Database, max_workers: int = 3, fetch_content: bool = False):
         self.database = database
         self.confidence_scorer = ConfidenceScorer(database)
+        self.max_workers = max_workers
+        self.fetch_content = fetch_content  # Skip full content fetch for speed
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.5',
-            # Note: Removed Accept-Encoding to avoid gzip responses that urllib doesn't auto-decompress
             'DNT': '1',
             'Connection': 'keep-alive'
         }
-        # Track page fetches to avoid excessive requests
+        self._lock = threading.Lock()
         self._page_fetch_count = 0
         self._max_page_fetches = 5  # Limit per search_topic call
     
@@ -591,8 +600,8 @@ class SearchEngineCollector:
                     print(f"    Error processing result: {e}")
                     continue
 
-            # Small delay between searches (reduced from 1s to 0.3s)
-            time.sleep(0.3)
+            # Minimal delay between searches (reduced from 0.3s to 0.1s)
+            time.sleep(0.1)
         
         # Remove duplicates based on URL
         seen_urls = set()
@@ -604,31 +613,60 @@ class SearchEngineCollector:
         
         return unique_articles
     
-    def collect_trending_topics(self) -> List[Article]:
-        """Collect articles for trending AI topics."""
+    def collect_trending_topics(self, parallel: bool = True) -> List[Article]:
+        """Collect articles for trending AI topics with parallel processing.
+
+        Args:
+            parallel: Use parallel topic searches (default: True)
+
+        Returns:
+            List of collected articles
+        """
         trending_topics = [
             "healthcare", "insurance", "finance", "banking", "manufacturing",
             "retail", "transportation", "education", "agriculture", "energy",
             "cybersecurity", "robotics", "autonomous", "drug discovery",
             "customer service", "supply chain", "compliance"
         ]
-        
+
         all_articles = []
-        
-        for topic in trending_topics:
-            print(f"Collecting AI articles for: {topic}")
-            articles = self.search_topic(topic, days_back=7, max_results=10)
-            
-            added_count = 0
-            for article in articles:
-                # Use save_article with auto-tagging (only for AI-relevant articles)
-                if self.database.save_article(article, auto_tag=True):
-                    added_count += 1
-                    all_articles.append(article)
-            
-            print(f"  Added {added_count}/{len(articles)} articles")
-            
-            # Be respectful with search rate limiting
-            time.sleep(2)
-        
+
+        if parallel and len(trending_topics) > 1:
+            # Parallel: Search all topics concurrently
+            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                future_to_topic = {
+                    executor.submit(self.search_topic, topic, days_back=7, max_results=10): topic
+                    for topic in trending_topics
+                }
+
+                for future in as_completed(future_to_topic):
+                    topic = future_to_topic[future]
+                    try:
+                        articles = future.result()
+                        print(f"  Found {len(articles)} articles for {topic}")
+
+                        # Filter and save AI-relevant articles
+                        for article in articles:
+                            if self.database.save_article(article, auto_tag=True):
+                                all_articles.append(article)
+
+                    except Exception as e:
+                        print(f"    Error searching {topic}: {e}")
+        else:
+            # Sequential: Original behavior
+            for topic in trending_topics:
+                print(f"Collecting AI articles for: {topic}")
+                articles = self.search_topic(topic, days_back=7, max_results=10)
+
+                added_count = 0
+                for article in articles:
+                    if self.database.save_article(article, auto_tag=True):
+                        added_count += 1
+                        all_articles.append(article)
+
+                print(f"  Added {added_count}/{len(articles)} articles")
+
+                # Minimal delay between topics
+                time.sleep(0.5)
+
         return all_articles

@@ -99,9 +99,12 @@ class UnifiedDigestGenerator:
         return test_ids
     
     def generate_digest(self, topics: List[str], days: int = 7, ai_only: bool = True,
-                       use_spacy: bool = True, min_confidence: float = 0.3,
-                       use_and_logic: bool = True) -> str:
-        """Generate unified topic digest."""
+                        use_spacy: bool = True, min_confidence: float = 0.3,
+                        use_and_logic: bool = True) -> str:
+        """Generate unified topic digest.
+        
+        Added direct keyword fallback for topics with no entities.
+        """
         logger.info(f"Generating digest for: {topics}")
         
         entity_scored = self._get_entity_articles(topics, days, ai_only, 0.05)
@@ -275,7 +278,26 @@ class UnifiedDigestGenerator:
                 if article_date >= cutoff_naive:
                     recent.append(a)
         
-        # Score both dated and undated articles with semantic similarity
+         # Check if topic_entities was populated (fallback to keywords if empty)
+        if not topic_entities:
+            # No entities found - use keywords directly as fallback
+            logger.info(f"No entities found, using keywords directly: {topics}")
+            # Create simple keyword entities matching ExtractedEntity structure
+            from .entity_types import ExtractedEntity, EntityType
+            
+            topic_entities = []
+            for t in topics:
+                topic_entities.append(ExtractedEntity(
+                    text=t,
+                    entity_type=EntityType.TECHNOLOGY,
+                    confidence=0.5,
+                    start_position=0,
+                    end_position=len(t),
+                    extraction_method="keyword_fallback",
+                    metadata={"is_keyword": True}
+                ))
+        
+         # Score both dated and undated articles with semantic similarity
         scored = []
         undated_scored = []
         

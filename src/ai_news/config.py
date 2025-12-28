@@ -554,7 +554,28 @@ class Config:
             'us': RegionConfig(name='United States'),
             'uk': RegionConfig(name='United Kingdom'),
             'eu': RegionConfig(name='European Union'),
-            'apac': RegionConfig(name='Asia-Pacific')
+            'apac': RegionConfig(name='Asia-Pacific', feeds=[
+                FeedConfig(
+                    name="Tech in Asia",
+                    url="https://www.techinasia.com/feed",
+                    category="tech"
+                ),
+                FeedConfig(
+                    name="South China Morning Post - Tech",
+                    url="https://www.scmp.com/tech/topics/feed",
+                    category="tech"
+                ),
+                FeedConfig(
+                    name="The Straits Times - Tech",
+                    url="https://www.straitstimes.com/news/technology/rss.xml",
+                    category="tech"
+                ),
+                FeedConfig(
+                    name="Nikkei Asia",
+                    url="https://asia.nikkei.com/feed.xml",
+                    category="business"
+                )
+            ])
         }
 
         # Create default topics
