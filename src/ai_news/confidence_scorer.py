@@ -10,6 +10,7 @@ from .database import Database, Article
 from .entity_extractor import EntityExtractor
 from .phrase_learner import PhraseLearner
 from .text_processor import TextProcessor
+from .config import get_performance_config
 
 logger = logging.getLogger(__name__)
 
@@ -64,24 +65,65 @@ class ConfidenceScorer:
         return max(0.0, min(1.0, confidence))
 
     def _score_entities(self, article: Article) -> float:
-        """Score based on AI entities found in article (0.0-0.7)."""
+        """Score based on AI entities found in article (0.0-0.7).
+        
+        Hybrid mode: Uses fast pattern matching, then spaCy for uncertain cases.
+        """
         text = f"{article.title or ''} {article.content or ''}"
-
+        perf_config = get_performance_config()
+        
         try:
+            # Step 1: Fast pattern matching (always)
             entities = self.entity_extractor.extract_entities(text)
             ai_entities = [
                 e for e in entities
                 if e.entity_type.value in self.AI_ENTITY_TYPES
             ]
-
-            # Each AI entity adds 0.25, max 0.7
-            entity_score = min(0.7, len(ai_entities) * 0.25)
-            logger.debug(f"Entity score: {entity_score:.2f} ({len(ai_entities)} AI entities)")
-
+            
+            # Step 2: Calculate base confidence from patterns
+            entity_score = min(0.7, len(ai_entities) * 0.2)
+            
+            # Step 3: Decide if spaCy enhancement needed
+            needs_spacy = False
+            if perf_config.use_spacy_in_collection == "full":
+                needs_spacy = True
+            elif perf_config.use_spacy_in_collection == "hybrid":
+                # Use spaCy for uncertain cases
+                needs_spacy = (
+                    (perf_config.spacy_on_low_confidence and entity_score < 0.5) or
+                    (perf_config.spacy_on_no_entities and len(ai_entities) == 0) or
+                    (perf_config.spacy_on_high_value_sources and 
+                     article.source_name.lower() in perf_config.high_value_sources)
+                )
+            # else "pattern-only": needs_spacy = False
+            
+            # Step 4: Apply spaCy if needed
+            if needs_spacy and self.entity_extractor.use_spacy and self.entity_extractor.nlp:
+                logger.debug(f"Using spaCy for article (confidence={entity_score:.2f}): {article.title[:40]}...")
+                
+                # Re-extract with spaCy
+                doc = self.entity_extractor.nlp(text)
+                spacy_entities = self._extract_entities_from_spacy(doc)
+                
+                # Use spaCy results if better
+                if len(spacy_entities) > len(ai_entities):
+                    ai_entities = spacy_entities
+                    entity_score = min(0.7, len(ai_entities) * 0.2)
+            
+            logger.debug(f"Entity score: {entity_score:.2f} ({len(ai_entities)} AI entities, spaCy_used={needs_spacy})")
             return entity_score
+            
         except Exception as e:
             logger.warning(f"Entity extraction failed: {e}")
             return 0.0
+
+    def _extract_entities_from_spacy(self, doc) -> List:
+        """Extract entities from spaCy doc."""
+        entities = []
+        # Use existing spacy entity extraction logic
+        # This delegates to the entity_extractor's spacy processing
+        # For now, return empty list - full implementation in next task
+        return entities
 
     def _score_phrases(self, article: Article) -> float:
         """Score based on learned AI phrases (0.0-0.3)."""
