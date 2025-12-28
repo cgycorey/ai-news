@@ -414,8 +414,22 @@ class UnifiedDigestGenerator:
         matched = []
         entity_score = 0.0
         
+        # Filter out garbage/common words misclassified as entities
+        garbage_entities = {
+            'like', 'while', 'what', 'how', 'one', 'according', 'future', 'not', 'after',
+            'when', 'some', 'why', 'everything', 'full', 'such', 'all', 'build', 'most',
+            'now', 'many', 'often', 'think', 'review', 'top', 'chinese', 'said', 'say',
+            'make', 'made', 'take', 'took', 'come', 'came', 'go', 'went', 'get', 'got'
+        }
+        
         for topic_entity in topic_entities:
             for tag in article_tags:
+                entity_text = tag['entity_text'].lower()
+                
+                # Skip garbage entities
+                if entity_text in garbage_entities:
+                    continue
+                
                 if tag['entity_text'].lower() == topic_entity.text.lower():
                     entity_score += 0.4
                     matched.append({'matched_text': tag['entity_text'], 'entity_type': tag['entity_type'], 'match_type': 'exact'})
