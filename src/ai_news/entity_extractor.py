@@ -970,6 +970,56 @@ class EntityExtractor:
         }
         return mapping.get(spacy_label)
     
+    def extract_entities_with_spacy(self, text: str) -> List[ExtractedEntity]:
+        """
+        Extract entities using spaCy NER.
+        
+        Args:
+            text: Text to extract from
+            
+        Returns:
+            List of ExtractedEntity objects
+        """
+        if not self.nlp:
+            return []
+        
+        try:
+            doc = self.nlp(text)
+            entities = []
+            
+            for ent in doc.ents:
+                # Map spaCy labels to our entity types
+                entity_type = self._map_spacy_label_to_type(ent.label_)
+                
+                if entity_type:
+                    extracted = ExtractedEntity(
+                        text=ent.text,
+                        entity_type=entity_type,
+                        start_position=ent.start_char,
+                        end_position=ent.end_char,
+                        confidence=0.7,  # Base confidence for spaCy
+                        extraction_method="spacy_ner",
+                        metadata={"spacy_label": ent.label_}
+                    )
+                    entities.append(extracted)
+            
+            return entities
+            
+        except Exception as e:
+            logger.warning(f"spaCy entity extraction failed: {e}")
+            return []
+    
+    def _map_spacy_label_to_type(self, spacy_label: str) -> Optional[EntityType]:
+        """Map spaCy NER labels to EntityType enum."""
+        label_map = {
+            'ORG': EntityType.COMPANY,
+            'PERSON': EntityType.PERSON,
+            'PRODUCT': EntityType.PRODUCT,
+            'EVENT': EntityType.TECHNOLOGY,  # Treat events as tech milestones
+            'WORK_OF_ART': EntityType.PRODUCT,  # Software, models
+        }
+        return label_map.get(spacy_label)
+    
     def _calculate_pattern_confidence(self, entity_text: str, entity_type: str) -> float:
         """Calculate confidence score for pattern-based entities."""
         base_confidence = 0.6

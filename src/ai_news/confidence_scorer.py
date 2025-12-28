@@ -118,12 +118,11 @@ class ConfidenceScorer:
             return 0.0
 
     def _extract_entities_from_spacy(self, doc) -> List:
-        """Extract entities from spaCy doc."""
-        entities = []
-        # Use existing spacy entity extraction logic
-        # This delegates to the entity_extractor's spacy processing
-        # For now, return empty list - full implementation in next task
-        return entities
+        """Extract entities from spaCy doc using EntityExtractor."""
+        # This is handled by EntityExtractor.extract_entities_with_spacy
+        # For now, delegate to the entity extractor
+        text = doc.text if hasattr(doc, 'text') else str(doc)
+        return self.entity_extractor.extract_entities_with_spacy(text)
 
     def _score_phrases(self, article: Article) -> float:
         """Score based on learned AI phrases (0.0-0.3)."""
