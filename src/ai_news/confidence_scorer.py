@@ -5,12 +5,14 @@ to calculate confidence score for article AI relevance.
 """
 
 import logging
+import time
 from typing import Dict, List
 from .database import Database, Article
 from .entity_extractor import EntityExtractor
 from .phrase_learner import PhraseLearner
 from .text_processor import TextProcessor
 from .config import get_performance_config
+from .performance_metrics import get_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +71,9 @@ class ConfidenceScorer:
         
         Hybrid mode: Uses fast pattern matching, then spaCy for uncertain cases.
         """
+        metrics = get_metrics()
+        start = time.time()
+        
         text = f"{article.title or ''} {article.content or ''}"
         perf_config = get_performance_config()
         
@@ -109,6 +114,10 @@ class ConfidenceScorer:
                 if len(spacy_entities) > len(ai_entities):
                     ai_entities = spacy_entities
                     entity_score = min(0.7, len(ai_entities) * 0.2)
+            
+            duration = time.time() - start
+            method = "spacy" if needs_spacy else "pattern"
+            metrics.record_entity_extraction(duration, method)
             
             logger.debug(f"Entity score: {entity_score:.2f} ({len(ai_entities)} AI entities, spaCy_used={needs_spacy})")
             return entity_score
