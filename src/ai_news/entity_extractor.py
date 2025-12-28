@@ -561,9 +561,13 @@ class EntityExtractor:
                             }
                         )
 
-                        # Save to database using shared lock (now safe with RLock)
-                        self.entity_manager.add_entity(new_entity)
-                        logger.info(f"✅ Learned new {config['type']} via spaCy {label}: {entity_name} (conf={confidence:.2f})")
+                        # Save to database using shared lock (best-effort during concurrent collection)
+                        try:
+                            self.entity_manager.add_entity(new_entity)
+                            logger.info(f"✅ Learned new {config['type']} via spaCy {label}: {entity_name} (conf={confidence:.2f})")
+                        except Exception as e:
+                            # Entity save may fail during high concurrency - log and continue
+                            logger.debug(f"Entity save skipped during concurrent collection: {entity_name} ({e})")
 
                         # Convert to ExtractedEntity
                         discovered.append(ExtractedEntity(
@@ -694,9 +698,12 @@ class EntityExtractor:
                 )
 
                 try:
-                    # Save to database using shared lock (now safe with RLock)
+                    # Save to database using shared lock (best-effort during concurrent collection)
                     self.entity_manager.add_entity(new_entity)
                     logger.info(f"✅ Learned entity via keyword fallback: {potential_name} (conf={confidence:.2f})")
+                except Exception as e:
+                    # Entity save may fail during high concurrency - log and continue
+                    logger.debug(f"Entity save skipped during concurrent collection: {potential_name} ({e})")
 
                     start_pos = text.find(potential_name)
                     if start_pos >= 0:

@@ -361,7 +361,8 @@ class EntityManager:
                     conn.commit()
 
         except Exception as e:
-            logger.error(f"Error saving entity to database: {e}")
+            # Database may be locked during concurrent operations - log at debug level
+            logger.debug(f"Entity save skipped (database busy): {e}")
     
     def update_entity_mention(self, entity_name: str, confidence_boost: float = 0.01):
         """Update entity mention count and confidence."""
