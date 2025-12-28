@@ -48,7 +48,7 @@ import logging
 # Simple pattern-based extraction - no heavy ML dependencies
 from .text_processor import TextProcessor
 from .entity_manager import EntityManager, Entity, get_entity_manager
-from .spacy_utils import load_spacy_model, is_model_available
+from .spacy_utils import get_spacy_model, is_model_available
 from .entity_types import ExtractedEntity, EntityType
 
 logger = logging.getLogger(__name__)
@@ -68,14 +68,18 @@ class EntityExtractor:
         self.text_processor = text_processor
         self.use_spacy = use_spacy and is_model_available()
         
-        # Load spaCy model if available
+        # Use singleton spaCy model instead of loading per instance
         self.nlp = None
         if self.use_spacy:
             try:
-                self.nlp = load_spacy_model()
-                logger.info("✅ spaCy model loaded for entity extraction")
+                self.nlp = get_spacy_model()
+                if self.nlp:
+                    logger.info("✅ EntityExtractor using singleton spaCy model")
+                else:
+                    logger.debug("spaCy not available, using pattern-only extraction")
+                    self.use_spacy = False
             except Exception as e:
-                logger.warning(f"Failed to load spaCy model: {e}")
+                logger.warning(f"Failed to get spaCy singleton: {e}")
                 self.use_spacy = False
         
         # Business entity patterns
