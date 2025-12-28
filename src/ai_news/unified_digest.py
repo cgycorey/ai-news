@@ -493,12 +493,13 @@ class UnifiedDigestGenerator:
         return scored
     
     def _filter_by_keywords(self, articles: List[Dict], topics: List[str], use_and_logic: bool) -> List[Dict]:
+        import re
         filtered = []
         for article in articles:
             text = f"{article.get('title', '')} {article.get('content', '')} {article.get('summary', '')}".lower()
-            if use_and_logic and all(t.lower() in text for t in topics):
+            if use_and_logic and all(re.search(rf'\b{re.escape(t.lower())}\b', text) for t in topics):
                 filtered.append(article)
-            elif not use_and_logic and any(t.lower() in text for t in topics):
+            elif not use_and_logic and any(re.search(rf'\b{re.escape(t.lower())}\b', text) for t in topics):
                 filtered.append(article)
         return filtered
     

@@ -3134,6 +3134,7 @@ def _generate_keyword_topic_digest(md_gen: MarkdownGenerator, database: Database
         Markdown digest content
     """
     from datetime import timedelta
+    import re
 
     start_date = datetime.now().replace(tzinfo=None) - timedelta(days=days)
     topics_str = ', '.join(topics)
@@ -3147,8 +3148,8 @@ def _generate_keyword_topic_digest(md_gen: MarkdownGenerator, database: Database
         matching_articles = []
         for article in candidate_articles:
             article_text = f"{article.title} {article.content or ''} {article.summary or ''} {article.category or ''}".lower()
-            # Check if ALL topics are found in this article
-            if all(topic.lower() in article_text for topic in topics):
+            # Check if ALL topics are found in this article (word boundary matching)
+            if all(re.search(rf'\b{re.escape(topic.lower())}\b', article_text) for topic in topics):
                 matching_articles.append(article)
 
         unique_articles = matching_articles
@@ -3160,8 +3161,8 @@ def _generate_keyword_topic_digest(md_gen: MarkdownGenerator, database: Database
         unique_articles = []
         for article in all_articles:
             article_text = f"{article.title} {article.content or ''} {article.summary or ''} {article.category or ''}".lower()
-            # Check if ANY topic matches
-            if any(topic.lower() in article_text for topic in topics):
+            # Check if ANY topic matches (word boundary matching)
+            if any(re.search(rf'\b{re.escape(topic.lower())}\b', article_text) for topic in topics):
                 unique_articles.append(article)
 
     # Filter by date range, separating dated and undated articles
