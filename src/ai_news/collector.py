@@ -11,9 +11,10 @@ from difflib import SequenceMatcher
 from dataclasses import dataclass
 from collections import defaultdict, Counter
 
-from .config import FeedConfig, Config, RegionConfig
+from .config import FeedConfig, Config, RegionConfig, get_performance_config
 from .database import Article, Database
 from .confidence_scorer import ConfidenceScorer
+from .performance_metrics import get_metrics
 from .security_utils import (
     parse_xml_safe, clean_text_content, validate_url, safe_urlopen
 )
@@ -25,6 +26,8 @@ class SimpleCollector:
     def __init__(self, database: Database):
         self.database = database
         self.confidence_scorer = ConfidenceScorer(database)
+        self.metrics = get_metrics()
+        self.perf_config = get_performance_config()
         self.headers = {
             'User-Agent': 'AI-News-Collector/1.0 (Simple RSS Reader)'
         }
@@ -350,10 +353,16 @@ class SimpleCollector:
             ai_count = 0
             
             for article in articles:
+                start = time.time()
                 if self.database.save_article(article):
                     added_count += 1
                     if article.ai_relevant:
                         ai_count += 1
+                
+                # Track entity extraction time
+                duration = time.time() - start
+                method = "hybrid" if self.perf_config.use_spacy_in_collection == "hybrid" else "pattern"
+                self.metrics.record_entity_extraction(duration, method)
             
             stats["total_fetched"] += len(articles)
             stats["total_added"] += added_count
@@ -364,6 +373,9 @@ class SimpleCollector:
             
             # Be respectful to servers
             time.sleep(1)
+        
+        # Log performance summary at end
+        self.metrics.log_summary()
         
         return stats
 
@@ -438,6 +450,7 @@ class SimpleCollector:
             stats = {"fetched": len(articles), "added": 0, "ai_relevant": 0}
             
             for article in articles:
+                start = time.time()
                 # Update article with region
                 article.region = region
                 
@@ -445,6 +458,11 @@ class SimpleCollector:
                     stats["added"] += 1
                     if article.ai_relevant:
                         stats["ai_relevant"] += 1
+                
+                # Track entity extraction time
+                duration = time.time() - start
+                method = "hybrid" if self.perf_config.use_spacy_in_collection == "hybrid" else "pattern"
+                self.metrics.record_entity_extraction(duration, method)
             
             return stats
             
