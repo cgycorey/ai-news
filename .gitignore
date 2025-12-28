@@ -232,4 +232,21 @@ override.*
 
 # uv lock file (generated)
 uv.lock
-src/ai_news/__pycache__
+src/ai_news/__pycache__data/
+*.db
+*.db-shm
+*.db-wal
+digests/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+coverage_html_*
+*.key
+.coverage
+htmlcov/
+*.log
+*.egg-info/
+.DS_Store
+.vscode/
+.idea/
