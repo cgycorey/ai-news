@@ -68,8 +68,8 @@ class SimpleCollector:
                 print(f"URL validation failed for {url}: {error}")
                 return None
 
-            # Use safe URL opener
-            response = safe_urlopen(url, headers=self.headers, timeout=30)
+            # Use safe URL opener (reduced timeout for faster failure on slow feeds)
+            response = safe_urlopen(url, headers=self.headers, timeout=10)
             if response is None:
                 return None
 
@@ -289,13 +289,15 @@ class SimpleCollector:
                 # Update ai_relevant based on confidence threshold
                 article.ai_relevant = (confidence >= 0.7)
                 
-                articles.append(article)
+                # Only add articles with confidence >= 0.7 (AI-relevant)
+                if confidence >= 0.7:
+                    articles.append(article)
                 
             except Exception as e:
                 print(f"    Error processing article: {e}")
                 continue
         
-        print(f"  Found {len(articles)} articles")
+        print(f"  Found {len(articles)} AI-relevant articles (confidence >= 0.7)")
         return articles
     
     def parse_atom_entry(self, entry) -> dict:
@@ -332,7 +334,7 @@ class SimpleCollector:
         
         return data
     
-    def collect_all_feeds(self, feed_configs: List[FeedConfig]) -> dict:
+    def collect_all_feeds(self, feed_configs: List[FeedConfig], max_articles_per_feed: int = 25) -> dict:
         """Collect articles from all configured feeds."""
         stats = {
             "total_fetched": 0,
@@ -347,7 +349,7 @@ class SimpleCollector:
                 continue
             
             print(f"Processing feed: {feed_config.name}")
-            articles = self.fetch_feed(feed_config, max_articles=50)
+            articles = self.fetch_feed(feed_config, max_articles=max_articles_per_feed)
             
             added_count = 0
             ai_count = 0
@@ -371,8 +373,7 @@ class SimpleCollector:
             
             print(f"  Added: {added_count}/{len(articles)} articles, AI-relevant: {ai_count}")
             
-            # Be respectful to servers
-            time.sleep(1)
+            # Be respectful to servers (removed sleep - too slow for 15 feeds)
         
         # Log performance summary at end
         self.metrics.log_summary()
@@ -384,13 +385,13 @@ class SimpleCollector:
         if region not in config.regions:
             print(f"❌ Unknown region: {region}")
             return {"feeds_processed": 0, "total_fetched": 0, "total_added": 0, "ai_relevant_added": 0}
-        
+
         region_config = config.regions[region]
         if not region_config.enabled:
             print(f"⚠️  Region {region} is disabled")
             return {"feeds_processed": 0, "total_fetched": 0, "total_added": 0, "ai_relevant_added": 0}
-        
-        print(f"🌍 Collecting news from {region_config.name} ({region.upper()})...")
+
+        print(f"🌍 Collecting news from {region_config.name} ({region.upper()}):", flush=True)
         
         stats = {
             "feeds_processed": 0,
@@ -402,8 +403,8 @@ class SimpleCollector:
         for feed in region_config.feeds:
             if not feed.enabled:
                 continue
-                
-            print(f"  📡 Processing {feed.name}...")
+
+            print(f"  📡 Processing {feed.name}...", flush=True)
             feed_stats = self._process_feed(feed, region)
             
             stats["feeds_processed"] += 1
@@ -411,11 +412,11 @@ class SimpleCollector:
             stats["total_added"] += feed_stats["added"]
             stats["ai_relevant_added"] += feed_stats["ai_relevant"]
         
-        print(f"✅ {region_config.name} collection complete:")
-        print(f"   Feeds processed: {stats['feeds_processed']}")
-        print(f"   Articles fetched: {stats['total_fetched']}")
-        print(f"   Articles added: {stats['total_added']}")
-        print(f"   AI-relevant added: {stats['ai_relevant_added']}")
+        print(f"✅ {region_config.name} collection complete:", flush=True)
+        print(f"   Feeds processed: {stats['feeds_processed']}", flush=True)
+        print(f"   Articles fetched: {stats['total_fetched']}", flush=True)
+        print(f"   Articles added: {stats['total_added']}", flush=True)
+        print(f"   AI-relevant added: {stats['ai_relevant_added']}", flush=True)
         
         return stats
 
@@ -453,7 +454,7 @@ class SimpleCollector:
                 start = time.time()
                 # Update article with region
                 article.region = region
-                
+
                 if self.database.save_article(article):
                     stats["added"] += 1
                     if article.ai_relevant:

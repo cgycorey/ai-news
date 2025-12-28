@@ -409,7 +409,8 @@ class Database:
                         article_id = cursor.lastrowid
 
                         # Auto-tag within SAME connection and lock to prevent concurrent writes
-                        if auto_tag and article_id:
+                        # Only tag AI-relevant articles to save time
+                        if auto_tag and article_id and article.ai_relevant:
                             try:
                                 self._auto_tag_article_in_transaction(article_id, article, conn)
                             except Exception as e:
@@ -437,23 +438,21 @@ class Database:
         tags = tagger.tag_article(article)
 
         if tags:
-            saved_count = 0
-            for tag in tags:
-                try:
-                    conn.execute("""
-                        INSERT OR REPLACE INTO article_entity_tags
-                        (article_id, entity_text, entity_type, confidence, source)
-                        VALUES (?, ?, ?, ?, ?)
-                    """, (
-                        article_id,
-                        tag.entity_text,
-                        tag.entity_type,
-                        tag.confidence,
-                        tag.source
-                    ))
-                    saved_count += 1
-                except sqlite3.IntegrityError:
-                    pass
+            all_tags = [
+                (article_id, tag.entity_text, tag.entity_type,
+                 tag.confidence, tag.source)
+                for tag in tags
+            ]
+            
+            try:
+                conn.executemany("""
+                    INSERT OR REPLACE INTO article_entity_tags
+                    (article_id, entity_text, entity_type, confidence, source)
+                    VALUES (?, ?, ?, ?, ?)
+                """, all_tags)
+                saved_count = len(all_tags)
+            except sqlite3.IntegrityError:
+                saved_count = 0
 
             # Update category if it was empty
             if not article.category or article.category == 'general':
@@ -606,15 +605,24 @@ class Database:
                 )
             return None
 
-    def add_article(self, article: Article) -> bool:
-        """Add article to database, returns True if added (new), False if exists."""
+    def add_article(self, article: Article, auto_tag: bool = True) -> bool:
+        """Add article to database, returns True if added (new), False if exists.
+        
+        Only saves AI-relevant articles (confidence >= 0.7) to improve performance.
+        """
+        # Skip articles below confidence threshold
+        if article.ai_confidence is not None and article.ai_confidence < 0.7:
+            logger.debug(f"Skipping low-confidence article: {article.title[:50]}... (confidence: {article.ai_confidence:.2f})")
+            return False
+        
         try:
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute("""
                     INSERT OR IGNORE INTO articles 
                     (title, content, summary, url, author, published_at, 
-                     source_name, category, region, ai_relevant, ai_keywords_found)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     source_name, category, region, ai_relevant, ai_keywords_found,
+                     ai_confidence, ai_review_status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     article.title,
                     article.content,
@@ -626,7 +634,9 @@ class Database:
                     article.category,
                     article.region,
                     article.ai_relevant,
-                    ",".join(article.ai_keywords_found or [])
+                    ",".join(article.ai_keywords_found or []),
+                    article.ai_confidence,
+                    article.ai_review_status
                 ))
                 return conn.total_changes > 0
         except sqlite3.Error as e:

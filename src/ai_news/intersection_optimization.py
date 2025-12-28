@@ -17,15 +17,31 @@ import nltk
 from nltk.tokenize import word_tokenize, sent_tokenize
 from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
-import spacy
 
-# Download required NLTK data
+# Download required NLTK data (only once)
 try:
-    nltk.download('punkt', quiet=True)
-    nltk.download('stopwords', quiet=True)
-    nltk.download('wordnet', quiet=True)
-except:
-    pass  # Data may already exist
+    nltk.data.find('tokenizers/punkt')
+except LookupError:
+    try:
+        nltk.download('punkt', quiet=True)
+    except:
+        pass
+
+try:
+    nltk.data.find('corpora/stopwords')
+except LookupError:
+    try:
+        nltk.download('stopwords', quiet=True)
+    except:
+        pass
+
+try:
+    nltk.data.find('corpora/wordnet')
+except LookupError:
+    try:
+        nltk.download('wordnet', quiet=True)
+    except:
+        pass
 
 class IntersectionOptimizer:
     """
@@ -56,9 +72,10 @@ class IntersectionOptimizer:
         self.context_window_size = 150  # characters
         self.sentence_window = 2        # sentences
         
-        # Initialize spaCy for semantic similarity
+        # Initialize spaCy for semantic similarity (using singleton)
+        from .spacy_utils import load_spacy_model
         try:
-            self.nlp = spacy.load('en_core_web_sm')
+            self.nlp = load_spacy_model()
         except OSError:
             print("Warning: spaCy model not found, using simplified similarity")
             self.nlp = None

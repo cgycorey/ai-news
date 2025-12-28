@@ -16,6 +16,7 @@ from .database import Article, Database
 from .security_utils import (
     parse_xml_safe, clean_text_content, validate_url, safe_urlopen
 )
+from .confidence_scorer import ConfidenceScorer
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +63,7 @@ class SearchEngineCollector:
     
     def __init__(self, database: Database):
         self.database = database
+        self.confidence_scorer = ConfidenceScorer(database)
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
@@ -177,17 +179,27 @@ class SearchEngineCollector:
             if not is_valid:
                 print(f"SearXNG URL validation failed: {error}")
                 return []
-            
-            # Use safe URL opener
-            response = safe_urlopen(search_url, headers=self.headers, timeout=30)
+
+            # Use safe URL opener (reduced timeout for faster response)
+            response = safe_urlopen(search_url, headers=self.headers, timeout=10)
             if response is None:
                 return []
-            
+
             with response:
                 json_content = response.read().decode('utf-8', errors='ignore')
-            
+
+            # Debug: Check what we got
+            if not json_content or json_content.strip() == '':
+                print(f"SearXNG returned empty response for '{query}'")
+                return []
+
             # Parse JSON response
-            search_data = json.loads(json_content)
+            try:
+                search_data = json.loads(json_content)
+            except json.JSONDecodeError as e:
+                print(f"SearXNG returned invalid JSON for '{query}': {e}")
+                print(f"Response preview: {json_content[:200]}")
+                return []
             
             # Extract results from JSON
             for result in search_data.get('results', [])[:max_results]:
@@ -222,11 +234,11 @@ class SearchEngineCollector:
                 print(f"Bing News URL validation failed: {error}")
                 return []
             
-            # Use safe URL opener
-            response = safe_urlopen(url, headers=self.headers, timeout=30)
+            # Use safe URL opener (reduced timeout for faster response)
+            response = safe_urlopen(url, headers=self.headers, timeout=10)
             if response is None:
                 return []
-            
+
             with response:
                 content = response.read().decode('utf-8', errors='ignore')
             
@@ -487,16 +499,14 @@ class SearchEngineCollector:
     def search_topic(self, topic: str, days_back: int = 7, max_results: int = 15) -> List[Article]:
         """Search for AI + topic articles."""
         articles = []
-        
-        # Generate search queries
+
+        # Generate search queries (reduced from 5 to 3 for speed)
         queries = [
             f"AI {topic}",
             f"artificial intelligence {topic}",
-            f"machine learning {topic}",
-            f"{topic} technology",
-            f"{topic} automation"
+            f"machine learning {topic}"
         ]
-        
+
         for query in queries:
             print(f"  Searching: {query}")
 
@@ -568,14 +578,21 @@ class SearchEngineCollector:
                             ai_keywords_found=keywords
                         )
                         
-                        articles.append(article)
+                        # Calculate confidence score
+                        confidence = self.confidence_scorer.calculate_confidence(article)
+                        article.ai_confidence = confidence
+                        article.ai_review_status = self.confidence_scorer.get_review_status(confidence)
+                        
+                        # Only save if confidence ≥ 0.7 (AI-relevant)
+                        if confidence >= 0.7:
+                            articles.append(article)
                         
                 except Exception as e:
                     print(f"    Error processing result: {e}")
                     continue
-            
-            # Small delay between searches
-            time.sleep(1)
+
+            # Small delay between searches (reduced from 1s to 0.3s)
+            time.sleep(0.3)
         
         # Remove duplicates based on URL
         seen_urls = set()
@@ -604,7 +621,8 @@ class SearchEngineCollector:
             
             added_count = 0
             for article in articles:
-                if self.database.add_article(article):
+                # Use save_article with auto-tagging (only for AI-relevant articles)
+                if self.database.save_article(article, auto_tag=True):
                     added_count += 1
                     all_articles.append(article)
             

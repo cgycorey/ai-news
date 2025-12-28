@@ -2,6 +2,9 @@
 
 import sys
 import argparse
+import os
+import signal
+import subprocess
 from pathlib import Path
 from textwrap import fill
 from datetime import datetime, timedelta
@@ -514,6 +517,54 @@ def handle_feeds_command(args, config):
         print("❌ Unknown feeds command. Use --help to see available commands.")
 
 
+def check_and_kill_old_processes(force=False):
+    """Check for existing ai-news collect processes and auto-kill them.
+
+    Args:
+        force: Unused parameter (kept for backwards compatibility)
+
+    Returns:
+        True if processes were found and killed, False otherwise
+    """
+    try:
+        # Find all ai-news collect processes (matches both ai-news and ai_news)
+        result = subprocess.run(
+            ['pgrep', '-f', 'ai_news.*collect'],
+            capture_output=True,
+            text=True
+        )
+
+        if result.returncode == 0:
+            # PIDs found
+            pids = result.stdout.strip().split('\n')
+            # Filter out current process
+            current_pid = str(os.getpid())
+            old_pids = [pid for pid in pids if pid != current_pid]
+
+            if old_pids:
+                print(f"⚠️  Found {len(old_pids)} existing ai-news collect process(es): {', '.join(old_pids)}")
+                print("🔧 Auto-killing old processes...")
+                
+                for pid in old_pids:
+                    try:
+                        os.kill(int(pid), signal.SIGTERM)
+                        print(f"  ✓ Killed process {pid}")
+                    except ProcessLookupError:
+                        print(f"  ⚠️  Process {pid} already terminated")
+                    except PermissionError:
+                        print(f"  ❌ Permission denied to kill process {pid}")
+                return True
+
+        return False
+
+    except FileNotFoundError:
+        # pgrep not available, skip check
+        return False
+    except Exception as e:
+        print(f"Warning: Failed to check for old processes: {e}")
+        return False
+
+
 def main():
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(description='AI News Collector - Simple RSS-based news feeder')
@@ -529,6 +580,7 @@ def main():
     collect_parser.add_argument('--topics', help='Collect only for specific topics (comma-separated, topic-focused collection)')
     collect_parser.add_argument('--ai-only', action='store_true', help='Filter to AI-relevant articles only (reduces noise)')
     collect_parser.add_argument('--websearch', action='store_true', help='Use web search instead of RSS feeds (topic-focused, AI-relevant)')
+    collect_parser.add_argument('--force', action='store_true', help='Auto-kill existing collection processes without prompting')
     
     # List command
     list_parser = subparsers.add_parser('list', help='List recent articles')
@@ -852,7 +904,7 @@ def main():
                 try:
                     from .collector import SimpleCollector
                     from .config import Config
-                    
+
                     config = Config()
                     collector = SimpleCollector(database)
                     total_stats = {"feeds_processed": 0, "total_fetched": 0, "total_added": 0, "ai_relevant_added": 0}
@@ -919,6 +971,10 @@ def main():
     # Execute command
     try:
         if args.command == 'collect':
+            # Auto-kill old collection processes before starting new one
+            force_kill = getattr(args, 'force', False)
+            check_and_kill_old_processes(force=force_kill)
+
             # Check if using websearch mode (topic-focused, AI-relevant)
             if getattr(args, 'websearch', False):
                 if not getattr(args, 'topics', None):

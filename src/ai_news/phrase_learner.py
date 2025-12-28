@@ -6,6 +6,7 @@ that distinguish AI content from general content.
 
 import logging
 import re
+import time
 from collections import Counter
 from typing import Dict, List, Tuple
 from .database import Database
@@ -33,8 +34,10 @@ class PhraseLearner:
         Returns:
             Dict mapping phrase -> confidence score (0.0-1.0)
         """
-        if self._cached_phrases:
-            return self._cached_phrases
+        if self._cached_phrases and self._cache_timestamp:
+            age = time.time() - self._cache_timestamp
+            if age < 300:
+                return self._cached_phrases
 
         logger.info("Starting phrase learning from database...")
 
@@ -45,7 +48,7 @@ class PhraseLearner:
         non_ai_articles = [a for a in all_articles if not a.ai_relevant][:2000]
 
         if len(ai_articles) < 10:
-            logger.warning("Not enough AI articles for learning (need at least 10)")
+            logger.debug("Not enough AI articles for learning (need at least 10)")
             return {}
 
         # Extract phrases from both sets
@@ -67,6 +70,7 @@ class PhraseLearner:
                 discriminative_phrases[phrase] = min(1.0, confidence)
 
         self._cached_phrases = discriminative_phrases
+        self._cache_timestamp = time.time()
         logger.info(f"Learnt {len(discriminative_phrases)} phrases from {len(ai_articles)} AI articles")
 
         return discriminative_phrases

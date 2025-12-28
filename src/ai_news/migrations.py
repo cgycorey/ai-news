@@ -181,15 +181,20 @@ class MigrationManager:
                 """
             },
             3: {
-                "description": "Add region column and index to articles table",
+                "description": "Add region index to articles table",
                 "sql": """
-                    -- Add region column to articles table if it doesn't exist
-                    -- SQLite doesn't support IF NOT EXISTS for ALTER TABLE, so we check first
-                    -- This migration is safe to run multiple times
-                    ALTER TABLE articles ADD COLUMN region TEXT DEFAULT 'global';
-                    
-                    -- Create region index if it doesn't exist
+                    -- Note: region column is created by Database.__init__
+                    -- This migration just ensures the index exists
                     CREATE INDEX IF NOT EXISTS idx_region ON articles(region);
+                """
+            },
+            4: {
+                "description": "Add confidence score and review status columns (idempotent)",
+                "sql": """
+                    -- Add ai_confidence column if it doesn't exist (already in Database.__init__)
+                    -- Add ai_review_status column if it doesn't exist (already in Database.__init__)
+                    -- These are no-ops since Database.__init__ already creates them
+                    SELECT 1;
                 """
             },
             5: {

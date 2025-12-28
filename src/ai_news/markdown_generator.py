@@ -125,7 +125,7 @@ class MarkdownGenerator:
             for i, article in enumerate(ai_articles, 1):
                 digest += f"""### {i}. {article.title}
 
-**Source:** {article.source_name} | **Category:** {article.category} | **Time:** {article.published_at.strftime('%H:%M') if article.published_at else 'Unknown'}
+**Source:** {article.source_name} | **Category:** {article.category} | **Date:** {article.published_at.strftime('%Y-%m-%d %H:%M') if article.published_at else 'Unknown'}
 
 {self.generate_article_summary(article)}
 
@@ -143,7 +143,7 @@ class MarkdownGenerator:
             for i, article in enumerate(other_articles, 1):
                 digest += f"""### {i}. {article.title}
 
-**Source:** {article.source_name} | **Category:** {article.category} | **Time:** {article.published_at.strftime('%H:%M') if article.published_at else 'Unknown'}
+**Source:** {article.source_name} | **Category:** {article.category} | **Date:** {article.published_at.strftime('%Y-%m-%d %H:%M') if article.published_at else 'Unknown'}
 
 {self.generate_article_summary(article)}
 

@@ -9,8 +9,9 @@ from difflib import SequenceMatcher
 import logging
 
 from .config import FeedConfig
-from .database import Article
+from .database import Article, Database
 from .collector import SimpleCollector
+from .confidence_scorer import ConfidenceScorer
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +56,9 @@ class KeywordCategory:
 class EnhancedMultiKeywordCollector:
     """Enhanced collector with multi-keyword scoring and intersection detection."""
     
-    def __init__(self, performance_mode: bool = True):
+    def __init__(self, database: Database, performance_mode: bool = True):
+        self.database = database
+        self.confidence_scorer = ConfidenceScorer(database)
         self.performance_mode = performance_mode
         self.keyword_index = {}  # For performance optimization
         self.regional_keywords = {}  # Region-specific keyword boosts
@@ -583,11 +586,21 @@ class EnhancedCollector(SimpleCollector):
                 if enhanced_result:
                     article.enhanced_result = enhanced_result
                 
-                articles.append(article)
+                # Calculate confidence score
+                confidence = self.confidence_scorer.calculate_confidence(article)
+                article.ai_confidence = confidence
+                article.ai_review_status = self.confidence_scorer.get_review_status(confidence)
+                
+                # Update ai_relevant based on confidence threshold
+                article.ai_relevant = (confidence >= 0.7)
+                
+                # Only add articles with confidence >= 0.7 (AI-relevant)
+                if confidence >= 0.7:
+                    articles.append(article)
                 
             except Exception as e:
                 print(f"    Error processing article: {e}")
                 continue
         
-        print(f"  Found {len(articles)} articles (enhanced analysis)")
+        print(f"  Found {len(articles)} AI-relevant articles (confidence >= 0.7, enhanced analysis)")
         return articles
