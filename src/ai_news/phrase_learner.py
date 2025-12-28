@@ -39,8 +39,9 @@ class PhraseLearner:
         logger.info("Starting phrase learning from database...")
 
         # Get AI and non-AI articles
+        # Note: ai_only=False returns ALL articles, so we filter in Python
+        ai_articles = self.database.get_articles(ai_only=True, limit=1000)
         all_articles = self.database.get_articles(limit=3000)
-        ai_articles = [a for a in all_articles if a.ai_relevant][:1000]
         non_ai_articles = [a for a in all_articles if not a.ai_relevant][:2000]
 
         if len(ai_articles) < 10:
