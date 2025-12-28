@@ -13,6 +13,7 @@ from collections import defaultdict, Counter
 
 from .config import FeedConfig, Config, RegionConfig
 from .database import Article, Database
+from .confidence_scorer import ConfidenceScorer
 from .security_utils import (
     parse_xml_safe, clean_text_content, validate_url, safe_urlopen
 )
@@ -23,6 +24,7 @@ class SimpleCollector:
 
     def __init__(self, database: Database):
         self.database = database
+        self.confidence_scorer = ConfidenceScorer(database)
         self.headers = {
             'User-Agent': 'AI-News-Collector/1.0 (Simple RSS Reader)'
         }
@@ -258,10 +260,10 @@ class SimpleCollector:
                 
                 # Check AI relevance
                 is_ai, keywords_found = self.is_ai_relevant(title, clean_content, feed_config.ai_keywords)
-                
+
                 # Create summary
                 summary = self.create_summary(clean_content)
-                
+
                 article = Article(
                     title=title,
                     content=clean_content,
@@ -275,6 +277,14 @@ class SimpleCollector:
                     ai_relevant=is_ai,
                     ai_keywords_found=keywords_found
                 )
+
+                # Calculate confidence score
+                confidence = self.confidence_scorer.calculate_confidence(article)
+                article.ai_confidence = confidence
+                article.ai_review_status = self.confidence_scorer.get_review_status(confidence)
+
+                # Update ai_relevant based on confidence threshold
+                article.ai_relevant = (confidence >= 0.7)
                 
                 articles.append(article)
                 

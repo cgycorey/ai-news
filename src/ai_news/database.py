@@ -387,8 +387,9 @@ class Database:
                         cursor = conn.execute("""
                             INSERT INTO articles
                             (title, content, summary, url, author, published_at,
-                             source_name, category, region, ai_relevant, ai_keywords_found)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                             source_name, category, region, ai_relevant, ai_keywords_found,
+                             ai_confidence, ai_review_status)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """, (
                             safe_title,
                             safe_content,
@@ -399,8 +400,10 @@ class Database:
                             safe_source,
                             safe_category,
                             article.region,
-                            article.ai_relevant,
-                            ",".join(article.ai_keywords_found or [])
+                            int(article.ai_relevant),
+                            ",".join(article.ai_keywords_found or []),
+                            article.ai_confidence,
+                            article.ai_review_status
                         ))
 
                         article_id = cursor.lastrowid
@@ -696,11 +699,13 @@ class Database:
                     category=row['category'] or "",
                     region=row['region'] or "global",
                     ai_relevant=bool(row['ai_relevant']),
-                    ai_keywords_found=row['ai_keywords_found'].split(",") if row['ai_keywords_found'] else []
+                    ai_keywords_found=row['ai_keywords_found'].split(",") if row['ai_keywords_found'] else [],
+                    ai_confidence=row['ai_confidence'] if row['ai_confidence'] is not None else 0.0,
+                    ai_review_status=row['ai_review_status'] if row['ai_review_status'] is not None else 'auto'
                 )
                 for row in rows
             ]
-    
+
     def search_articles(self, query: str, limit: int = 20, region: Optional[str] = None) -> List[Article]:
         """Search articles with optional region filtering and fallback."""
         with sqlite3.connect(self.db_path) as conn:
@@ -773,11 +778,13 @@ class Database:
                     category=row['category'] or "",
                     region=row['region'] or "global",
                     ai_relevant=bool(row['ai_relevant']),
-                    ai_keywords_found=row['ai_keywords_found'].split(",") if row['ai_keywords_found'] else []
+                    ai_keywords_found=row['ai_keywords_found'].split(",") if row['ai_keywords_found'] else [],
+                    ai_confidence=row['ai_confidence'] if row['ai_confidence'] is not None else 0.0,
+                    ai_review_status=row['ai_review_status'] if row['ai_review_status'] is not None else 'auto'
                 )
                 for row in rows
             ]
-    
+
     def get_articles_by_keywords(self, keywords: List[str], limit: int = 100, search_content: bool = True) -> List[Article]:
         """Get articles matching any of the given keywords.
 
@@ -830,23 +837,25 @@ class Database:
 
                 rows = conn.execute(query, params).fetchall()
 
-                return [
-                    Article(
-                        id=row['id'],
-                        title=row['title'],
-                        content=row['content'],
-                        summary=row['summary'],
-                        url=row['url'],
-                        author=row['author'] or "",
-                        published_at=datetime.fromisoformat(row['published_at']) if row['published_at'] else None,
-                        source_name=row['source_name'] or "",
-                        category=row['category'] or "",
-                        region=row['region'] or "global",
-                        ai_relevant=bool(row['ai_relevant']),
-                        ai_keywords_found=row['ai_keywords_found'].split(",") if row['ai_keywords_found'] else []
-                    )
-                    for row in rows
-                ]
+            return [
+                Article(
+                    id=row['id'],
+                    title=row['title'],
+                    content=row['content'],
+                    summary=row['summary'],
+                    url=row['url'],
+                    author=row['author'] or "",
+                    published_at=datetime.fromisoformat(row['published_at']) if row['published_at'] else None,
+                    source_name=row['source_name'] or "",
+                    category=row['category'] or "",
+                    region=row['region'] or "global",
+                    ai_relevant=bool(row['ai_relevant']),
+                    ai_keywords_found=row['ai_keywords_found'].split(",") if row['ai_keywords_found'] else [],
+                    ai_confidence=row['ai_confidence'] if row['ai_confidence'] is not None else 0.0,
+                    ai_review_status=row['ai_review_status'] if row['ai_review_status'] is not None else 'auto'
+                )
+                for row in rows
+            ]
 
         except sqlite3.Error as e:
             logger.error(f"Error getting articles by keywords: {e}")
