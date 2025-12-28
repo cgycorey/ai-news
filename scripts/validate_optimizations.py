@@ -19,7 +19,7 @@ def test_collection_performance():
     """Test collection speed with optimizations."""
     print("\n=== Testing Collection Performance ===")
     
-    db = Database(':memory:')
+    db = tempfile.mkstemp(suffix='.db')
     db.init_database()
     metrics = get_metrics()
     
@@ -57,7 +57,7 @@ def test_accuracy_preservation():
     """Test that accuracy is maintained."""
     print("\n=== Testing Accuracy Preservation ===")
     
-    db = Database(':memory:')
+    db = tempfile.mkstemp(suffix='.db')
     db.init_database()
     scorer = ConfidenceScorer(db)
     # Initialize phrases to empty to avoid DB query
