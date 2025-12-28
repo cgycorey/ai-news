@@ -55,37 +55,107 @@ class ArticleTagger:
     
     def tag_article(self, article: Article) -> List[EntityTag]:
         """Extract and tag entities from an article.
-        
+
         Args:
             article: Article object with title and content
-            
+
         Returns:
             List of EntityTag objects
         """
         # Combine title and content for entity extraction
         text = f"{article.title} {article.content or ''}"
-        
+
         if not text.strip():
             logger.debug("Empty article text, skipping entity extraction")
             return []
-        
+
         try:
             # Extract entities using the entity extractor
             entities = self.entity_extractor.extract_entities(text)
         except Exception as e:
             logger.error(f"Error extracting entities: {e}")
             entities = []
-        
+
         # Filter by minimum confidence and valid entity types
         valid_entity_types = {'company', 'product', 'technology', 'person'}
+
+        # Extended garbage filter - common words misclassified as entities
+        garbage_words = {
+            # Pronouns and determiners
+            'it', 'its', 'this', 'that', 'these', 'those', 'he', 'she', 'they', 'them',
+            'his', 'her', 'their', 'our', 'your', 'my', 'who', 'which', 'what', 'whom',
+
+            # Common verbs
+            'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had',
+            'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might',
+            'must', 'can', 'make', 'made', 'take', 'took', 'get', 'got', 'go', 'went',
+            'come', 'came', 'say', 'said', 'see', 'saw', 'know', 'knew', 'think',
+            'thought', 'want', 'wanted', 'use', 'used', 'find', 'found', 'give', 'gave',
+
+            # Common adjectives and adverbs
+            'more', 'most', 'less', 'least', 'very', 'really', 'just', 'still', 'also',
+            'even', 'only', 'some', 'many', 'much', 'few', 'all', 'any', 'each', 'every',
+            'good', 'better', 'best', 'bad', 'worse', 'worst', 'new', 'old', 'big',
+            'small', 'large', 'little', 'long', 'short', 'high', 'low', 'first', 'last',
+
+            # Common nouns (often misclassified)
+            'people', 'person', 'things', 'something', 'nothing', 'anything', 'everything',
+            'time', 'times', 'way', 'ways', 'part', 'parts', 'work', 'works', 'world',
+            'life', 'lives', 'case', 'cases', 'point', 'points', 'place', 'places',
+            'right', 'rights', 'reason', 'reasons', 'problem', 'problems', 'service',
+            'services', 'company', 'companies', 'business', 'businesses', 'industry',
+            'industries', 'market', 'markets', 'system', 'systems', 'process', 'processes',
+            'product', 'products', 'technology', 'technologies', 'research', 'researchers',
+
+            # Temporal and spatial words
+            'now', 'then', 'today', 'tomorrow', 'yesterday', 'here', 'there', 'where',
+            'when', 'while', 'during', 'after', 'before', 'until', 'since', 'again',
+
+            # Logical and connector words
+            'and', 'or', 'but', 'if', 'because', 'although', 'though', 'however',
+            'therefore', 'thus', 'hence', 'otherwise', 'whether', 'either', 'neither',
+
+            # Common prepositions
+            'of', 'in', 'on', 'at', 'by', 'for', 'from', 'with', 'about', 'against',
+            'between', 'into', 'through', 'during', 'before', 'after', 'above', 'below',
+
+            # Numbers and quantities
+            'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine',
+            'ten', 'hundred', 'thousand', 'million', 'billion', 'once', 'twice',
+
+            # Specific garbage found in DB
+            'learning', 'companies', 'human', 'here', 'there', 'two', 'even', 'key',
+            'people', 'still', 'among', 'few', 'comments', 'world', 'according',
+            'future', 'not', 'after', 'when', 'some', 'why', 'everything', 'full',
+            'such', 'all', 'build', 'most', 'now', 'many', 'often', 'think', 'review',
+            'top', 'chinese', 'make', 'take', 'come', 'like', 'while', 'what', 'how',
+            'one', 'said', 'say'
+        }
+
         tags = []
         for entity in entities:
             if entity.confidence >= self.min_confidence:
                 entity_type_value = entity.entity_type.value
-                
+
                 # Skip entity types that aren't in the database schema
                 if entity_type_value not in valid_entity_types:
                     logger.debug(f"Skipping entity '{entity.text}' with invalid type '{entity_type_value}'")
+                    continue
+
+                # Skip garbage words misclassified as entities
+                entity_lower = entity.text.lower().strip()
+                if entity_lower in garbage_words:
+                    logger.debug(f"Skipping garbage entity '{entity.text}'")
+                    continue
+
+                # Skip very short (< 3 chars) or very long (> 50 chars) entities
+                if len(entity.text) < 3 or len(entity.text) > 50:
+                    logger.debug(f"Skipping entity '{entity.text}' (invalid length)")
+                    continue
+
+                # Skip single-character entities
+                if len(entity.text.strip()) == 1:
+                    logger.debug(f"Skipping single-character entity '{entity.text}'")
                     continue
                 
                 # Map extraction method to database source values

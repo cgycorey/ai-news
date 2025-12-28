@@ -339,7 +339,7 @@ class Database:
         finally:
             lock.release()
     
-    def save_article(self, article: Article, auto_tag: bool = True) -> Optional[int]:
+    def save_article(self, article: Article, auto_tag: bool = True, skip_entities: bool = False) -> Optional[int]:
         """Save an article to the database with automatic deduplication and entity tagging.
 
         Thread-safe: Uses global write lock to prevent concurrent database writes.
@@ -347,6 +347,7 @@ class Database:
         Args:
             article: Article object to save
             auto_tag: Whether to automatically extract and save entity tags (default: True)
+            skip_entities: Skip entity extraction entirely for faster collection (default: False)
 
         Returns:
             Article ID if saved, existing ID if duplicate, None on error
@@ -410,7 +411,8 @@ class Database:
 
                         # Auto-tag within SAME connection and lock to prevent concurrent writes
                         # Only tag AI-relevant articles to save time
-                        if auto_tag and article_id and article.ai_relevant:
+                        # Skip entity extraction if requested (for faster collection)
+                        if auto_tag and article_id and article.ai_relevant and not skip_entities:
                             try:
                                 self._auto_tag_article_in_transaction(article_id, article, conn)
                             except Exception as e:
@@ -545,6 +547,82 @@ class Database:
                     conn.commit()
             except sqlite3.Error as e:
                 logger.error(f"Error updating category for article {article_id}: {e}")
+
+    def extract_entities_for_article(self, article_id: int) -> int:
+        """Extract and save entities for an article (on-demand extraction).
+
+        Use this to extract entities for articles that were saved with skip_entities=True.
+        This is useful for speeding up collection by deferring entity extraction.
+
+        Args:
+            article_id: Article ID to extract entities for
+
+        Returns:
+            Number of entities extracted and saved
+        """
+        try:
+            from .article_tagger import get_article_tagger
+
+            # Load article
+            article = self.get_article_by_id(article_id)
+            if not article:
+                logger.warning(f"Article {article_id} not found for entity extraction")
+                return 0
+
+            # Check if already tagged
+            with sqlite3.connect(self.db_path) as check_conn:
+                existing_tags = check_conn.execute(
+                    "SELECT COUNT(*) FROM article_entity_tags WHERE article_id = ?",
+                    (article_id,)
+                ).fetchone()[0]
+
+            if existing_tags > 0:
+                logger.debug(f"Article {article_id} already has {existing_tags} entity tags")
+                return existing_tags
+
+            # Extract entities
+            tagger = get_article_tagger()
+            tags = tagger.tag_article(article)
+
+            if not tags:
+                logger.debug(f"No entities extracted for article {article_id}")
+                return 0
+
+            # Save tags with write lock
+            with self._write_lock:
+                try:
+                    with sqlite3.connect(self.db_path) as conn:
+                        conn.execute('PRAGMA journal_mode=WAL')
+
+                        saved_count = 0
+                        for tag in tags:
+                            try:
+                                conn.execute("""
+                                    INSERT OR REPLACE INTO article_entity_tags
+                                    (article_id, entity_text, entity_type, confidence, source)
+                                    VALUES (?, ?, ?, ?, ?)
+                                """, (
+                                    article_id,
+                                    tag.entity_text,
+                                    tag.entity_type,
+                                    tag.confidence,
+                                    tag.source
+                                ))
+                                saved_count += 1
+                            except sqlite3.IntegrityError:
+                                pass
+
+                        conn.commit()
+                        logger.info(f"Extracted {saved_count} entities for article {article_id}")
+                        return saved_count
+
+                except sqlite3.Error as e:
+                    logger.warning(f"Database error during entity extraction: {e}")
+                    return 0
+
+        except Exception as e:
+            logger.error(f"Error extracting entities for article {article_id}: {e}")
+            return 0
 
     def _extract_canonical_url(self, url: str) -> str:
         """Extract canonical URL from tracking/redirect URLs.

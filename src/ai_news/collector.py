@@ -129,17 +129,6 @@ class SimpleCollector:
 
         return content
 
-    def is_ai_relevant(self, title: str, content: str, keywords: List[str]) -> tuple[bool, List[str]]:
-        """Check if content is AI-related based on keywords."""
-        text = (title + " " + content).lower()
-        found_keywords = []
-
-        for keyword in keywords:
-            if keyword.lower() in text:
-                found_keywords.append(keyword)
-
-        return len(found_keywords) > 0, found_keywords
-
     def create_summary(self, content: str, max_length: int = 200) -> str:
         """Create a simple summary by truncating content."""
         if not content:
@@ -266,12 +255,9 @@ class SimpleCollector:
                 
                 # Clean HTML
                 clean_content = self.clean_html(data.get('content', ''))
-                
+
                 # Get published date
                 published_at = self.parse_date(data.get('date', ''))
-                
-                # Check AI relevance
-                is_ai, keywords_found = self.is_ai_relevant(title, clean_content, feed_config.ai_keywords)
 
                 # Create summary
                 summary = self.create_summary(clean_content)
@@ -286,11 +272,11 @@ class SimpleCollector:
                     source_name=feed_config.name,
                     category=feed_config.category,
                     region="global",  # Default region, will be updated in _process_feed
-                    ai_relevant=is_ai,
-                    ai_keywords_found=keywords_found
+                    ai_relevant=False,  # Will be set by confidence scorer
+                    ai_keywords_found=[]
                 )
 
-                # Calculate confidence score
+                # Calculate confidence score (includes AI keyword gate)
                 confidence = self.confidence_scorer.calculate_confidence(article)
                 article.ai_confidence = confidence
                 article.ai_review_status = self.confidence_scorer.get_review_status(confidence)
@@ -365,14 +351,16 @@ class SimpleCollector:
             
             for article in articles:
                 start = time.time()
-                if self.database.save_article(article):
+                # Skip entity extraction during collection for faster performance
+                # Entities will be extracted on-demand when needed (e.g., topic digests)
+                if self.database.save_article(article, skip_entities=True):
                     added_count += 1
                     if article.ai_relevant:
                         ai_count += 1
-                
-                # Track entity extraction time
+
+                # Track save time (entity extraction skipped)
                 duration = time.time() - start
-                method = "hybrid" if self.perf_config.use_spacy_in_collection == "hybrid" else "pattern"
+                method = "skipped"  # Entity extraction deferred
                 self.metrics.record_entity_extraction(duration, method)
             
             stats["total_fetched"] += len(articles)
@@ -500,12 +488,13 @@ class SimpleCollector:
             for article in all_articles:
                 try:
                     start = time.time()
-                    if self.database.save_article(article):
+                    # Skip entity extraction during collection for faster performance
+                    if self.database.save_article(article, skip_entities=True):
                         added_count += 1
                         if article.ai_relevant:
                             ai_count += 1
 
-                    # Track performance
+                    # Track performance (entity extraction skipped)
                     duration = time.time() - start
                     method = "hybrid" if self.perf_config.use_spacy_in_collection == "hybrid" else "pattern"
                     self.metrics.record_entity_extraction(duration, method)
@@ -538,11 +527,12 @@ class SimpleCollector:
                 # Update article with region
                 article.region = region
 
-                if self.database.save_article(article):
+                # Skip entity extraction during collection for faster performance
+                if self.database.save_article(article, skip_entities=True):
                     stats["added"] += 1
                     if article.ai_relevant:
                         stats["ai_relevant"] += 1
-                
+
                 # Track entity extraction time
                 duration = time.time() - start
                 method = "hybrid" if self.perf_config.use_spacy_in_collection == "hybrid" else "pattern"

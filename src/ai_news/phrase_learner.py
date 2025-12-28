@@ -80,11 +80,45 @@ class PhraseLearner:
 
         Args:
             articles: List of Article objects
-            n: Maximum n-gram size (1=unigram, 2=bigram, 3=trigram)
+            n: Maximum n-gram size (1=gram, 2=bigram, 3=trigram)
 
         Returns:
             Counter of phrase -> frequency
         """
+        # Comprehensive stopword filter to exclude common phrases
+        stopwords = {
+            # Articles and determiners
+            'the', 'a', 'an', 'this', 'that', 'these', 'those',
+
+            # Prepositions
+            'in', 'on', 'at', 'by', 'for', 'with', 'from', 'to', 'of', 'about',
+            'between', 'into', 'through', 'during', 'before', 'after', 'above', 'below',
+
+            # Conjunctions
+            'and', 'or', 'but', 'if', 'because', 'although', 'though', 'however',
+
+            # Common verbs
+            'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had',
+            'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might',
+
+            # Pronouns
+            'it', 'its', 'he', 'she', 'they', 'them', 'his', 'her', 'their', 'our', 'your',
+
+            # Common adjectives
+            'more', 'most', 'less', 'least', 'very', 'really', 'just', 'still', 'also',
+            'even', 'only', 'some', 'many', 'much', 'few', 'all', 'any', 'each', 'every',
+
+            # Common nouns (non-technical)
+            'people', 'person', 'things', 'something', 'time', 'way', 'part', 'work',
+            'world', 'life', 'case', 'point', 'place', 'right', 'reason', 'problem',
+
+            # Numbers
+            'one', 'two', 'first', 'second', 'next', 'last',
+
+            # Additional common words
+            'company', 'new', 'can', 'but'
+        }
+
         phrases = Counter()
 
         for article in articles:
@@ -100,7 +134,13 @@ class PhraseLearner:
 
                     # Filter: must contain at least one meaningful word
                     if len(phrase.split()) >= 2:
-                        phrases[phrase] += 1
+                        # STOPWORD FILTER: Skip phrases with only stopwords
+                        words_in_phrase = phrase.split()
+                        meaningful_words = [w for w in words_in_phrase if w not in stopwords]
+
+                        # Must have at least 50% meaningful words
+                        if len(meaningful_words) / len(words_in_phrase) >= 0.5:
+                            phrases[phrase] += 1
 
         return phrases
 
