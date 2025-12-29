@@ -71,14 +71,9 @@ class IntersectionOptimizer:
         # Context windows for local proximity
         self.context_window_size = 150  # characters
         self.sentence_window = 2        # sentences
-        
-        # Initialize spaCy for semantic similarity (using singleton)
-        from .spacy_utils import load_spacy_model
-        try:
-            self.nlp = load_spacy_model()
-        except OSError:
-            print("Warning: spaCy model not found, using simplified similarity")
-            self.nlp = None
+
+        # spaCy disabled - using simplified similarity only
+        self.nlp = None
     
     def calculate_semantic_similarity(self, text1: str, text2: str) -> float:
         """

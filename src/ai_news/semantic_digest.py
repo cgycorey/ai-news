@@ -7,21 +7,40 @@ Generates topic digests using semantic embeddings instead of keyword matching.
 from typing import List, Dict, Tuple
 from datetime import datetime, timedelta
 import numpy as np
+from urllib.parse import urlparse, urlunparse
+from collections import defaultdict
 
 
 class SemanticDigestGenerator:
     """Generate topic digests using semantic similarity."""
 
-    def __init__(self, database, min_similarity: float = 0.58):
+    def __init__(self, database, min_similarity: float = 0.62):
         """Initialize the semantic digest generator.
 
         Args:
             database: Database instance
-            min_similarity: Minimum similarity threshold (0-1)
+            min_similarity: Minimum similarity threshold (0-1), default 0.62 for better quality
         """
         self.db = database
         self.min_similarity = min_similarity
         self.embedding_model = None
+
+    def _normalize_url(self, url: str) -> str:
+        """Normalize URL by removing tracking parameters."""
+        try:
+            parsed = urlparse(url)
+            # Remove query parameters and fragment
+            clean = urlunparse((
+                parsed.scheme,
+                parsed.netloc,
+                parsed.path,
+                '',  # Remove params
+                '',  # Remove query
+                ''   # Remove fragment
+            ))
+            return clean
+        except Exception:
+            return url
 
     def _get_model(self):
         """Lazy load FastEmbed model."""
@@ -88,33 +107,95 @@ class SemanticDigestGenerator:
         # Generate embeddings
         article_embeddings = list(model.embed(article_texts))
 
-        # Combine topics into single query
+        # Combine topics into single query with better phrasing
+        # For cross-domain topics, add "AI" context if not present
         topic_query = " ".join(topics)
+        if not any('ai' in t.lower() for t in topics):
+            topic_query = f"AI {topic_query}"  # Add AI context for better matching
+
         topic_embedding = list(model.embed([topic_query]))[0]
 
-        # Calculate similarities
+        # Extract domain keywords from topics for filtering
+        domain_keywords = set()
+        filter_only_mode = False  # If True, require domain keywords
+
+        # Check if topics contain domain-specific terms (not just AI terms)
+        topic_text = ' '.join(topics).lower()
+        domain_specific = any(term in topic_text for term in
+            {'healthcare', 'medical', 'medicine', 'hospital',
+             'education', 'teaching', 'school', 'university', 'student',
+             'finance', 'banking', 'financial', 'investment',
+             'manufacturing', 'retail', 'transportation', 'agriculture'})
+
+        filter_only_mode = domain_specific
+
+        for topic in topics:
+            # Extract meaningful words from topics (but not "machine", "learning", etc)
+            words = topic.lower().split()
+            for w in words:
+                if len(w) > 3 and w not in {'artificial', 'intelligence', 'machine'}:
+                    domain_keywords.add(w)
+
+        # Calculate similarities with date boost
         scored_articles = []
+        now = datetime.now()
+        seen_urls = set()  # Track normalized URLs for deduplication
+
         for article, emb in zip(dated_articles, article_embeddings):
             similarity = np.dot(topic_embedding, emb) / (
                 np.linalg.norm(topic_embedding) * np.linalg.norm(emb)
             )
 
+            # Hard filter: for domain-specific topics, article MUST contain domain keywords
+            # Skip this for general AI topics
+            article_text = f"{article.title} {article.summary or ''} {article.content or ''}".lower()
+            if domain_keywords:
+                # Check if article contains at least one domain keyword
+                has_domain_relevance = any(kw in article_text for kw in domain_keywords)
+                if not has_domain_relevance:
+                    continue  # Skip articles that don't mention the domain
+
+            # Date recency boost (articles from today get +0.07, decay over 7 days)
+            if article.published_at:
+                days_old = (now - article.published_at.replace(tzinfo=None)).days
+                recency_boost = max(0, (7 - days_old) * 0.01)
+            else:
+                recency_boost = 0
+
+            final_score = similarity + recency_boost
+
             if similarity >= self.min_similarity:
-                scored_articles.append((article, similarity))
+                # Normalize URL for deduplication
+                normalized_url = self._normalize_url(article.url)
+                if normalized_url not in seen_urls:
+                    seen_urls.add(normalized_url)
+                    scored_articles.append((article, similarity, final_score))
 
-        # Sort by similarity
-        scored_articles.sort(key=lambda x: x[1], reverse=True)
+        # Sort by final_score (similarity + recency)
+        scored_articles.sort(key=lambda x: x[2], reverse=True)
 
-        # Return top results
-        results = scored_articles[:top_k]
+        # Apply source diversity: max 2 articles per source in top results
+        diversified_results = []
+        source_counts = defaultdict(int)
+
+        for article, similarity, final_score in scored_articles:
+            source = article.source_name
+            if source_counts[source] < 2:  # Max 2 per source
+                diversified_results.append((article, similarity, final_score))
+                source_counts[source] += 1
+
+            if len(diversified_results) >= top_k:
+                break
+
+        results = diversified_results
 
         return {
             'topics': topics,
-            'articles': results,  # List of (article, similarity)
+            'articles': results,  # List of (article, similarity, final_score)
             'total': len(results),
             'method': 'semantic_fastembed',
             'threshold': self.min_similarity,
-            'avg_similarity': sum(s for _, s in results) / len(results) if results else 0
+            'avg_similarity': sum(s for _, s, _ in results) / len(results) if results else 0
         }
 
     def format_markdown(self, digest_result: Dict) -> str:
@@ -150,7 +231,7 @@ class SemanticDigestGenerator:
         if not articles:
             md += f"No articles found for '{topics_str}' with semantic similarity >= {digest_result.get('threshold', 0.58)}\n"
         else:
-            for i, (article, similarity) in enumerate(articles, 1):
+            for i, (article, similarity, final_score) in enumerate(articles, 1):
                 match_pct = int(similarity * 100)
 
                 md += f"### {i}. 🤖 {article.title}\n\n"

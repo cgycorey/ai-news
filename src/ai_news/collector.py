@@ -12,10 +12,10 @@ from dataclasses import dataclass
 from collections import defaultdict, Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
+import numpy as np
 
 from .config import FeedConfig, Config, RegionConfig, get_performance_config
 from .database import Article, Database
-from .confidence_scorer import ConfidenceScorer
 from .performance_metrics import get_metrics
 from .security_utils import (
     parse_xml_safe, clean_text_content, validate_url, safe_urlopen
@@ -27,7 +27,6 @@ class SimpleCollector:
 
     def __init__(self, database: Database, max_workers: int = 5):
         self.database = database
-        self.confidence_scorer = ConfidenceScorer(database)
         self.metrics = get_metrics()
         self.perf_config = get_performance_config()
         self.max_workers = max_workers  # Parallel feed fetching
@@ -35,6 +34,89 @@ class SimpleCollector:
             'User-Agent': 'AI-News-Collector/1.0 (Simple RSS Reader)'
         }
         self._lock = threading.Lock()  # Thread-safe database writes
+        self._semantic_model = None  # Lazy loaded FastEmbed model
+
+    def _get_semantic_model(self):
+        """Lazy load FastEmbed model for semantic matching."""
+        if self._semantic_model is None:
+            try:
+                from fastembed import TextEmbedding
+                self._semantic_model = TextEmbedding()
+            except ImportError:
+                raise ImportError("FastEmbed not installed. Install with: pip install fastembed")
+        return self._semantic_model
+
+    def _is_ai_relevant(self, article: Article) -> bool:
+        """Simple AI relevance check using keywords."""
+        CORE_AI_KEYWORDS = {
+            # Core AI/ML terms
+            'machine learning', 'deep learning', 'neural network', 'artificial intelligence', 'ai',
+            'gpt', 'llm', 'large language model', 'transformer', 'diffusion model',
+            'computer vision', 'natural language processing', 'nlp', 'reinforcement learning',
+            'generative ai', 'chatgpt', 'openai', 'anthropic', 'claude', 'gemini',
+
+            # Extended AI companies/organizations
+            'hugging face', 'stability ai', 'midjourney', 'deepmind', 'google deepmind',
+            'microsoft ai', 'meta ai', 'nvidia', 'groq', 'mistral ai',
+
+            # Additional AI technologies
+            'embedding', 'vector database', 'rag', 'retrieval augmented generation',
+            'prompt engineering', 'fine-tuning', 'foundation model', 'multimodal',
+
+            # AI applications
+            'text generation', 'image generation', 'code generation', 'ai assistant'
+        }
+        text = f"{article.title or ''} {article.summary or ''} {article.content or ''}".lower()
+        return any(kw in text for kw in CORE_AI_KEYWORDS)
+
+    def should_collect_article(self, article: Article, topics: Optional[List[str]] = None) -> bool:
+        """Check if article should be collected based on semantic similarity to topics.
+
+        Args:
+            article: Article to check
+            topics: List of topics to match against (None or empty = collect all)
+
+        Returns:
+            True if article should be collected, False otherwise
+        """
+        # Default behavior: collect all articles if no topics specified
+        if not topics:
+            return True
+
+        try:
+            model = self._get_semantic_model()
+
+            # Prepare article text
+            article_text = f"{article.title}. {article.summary or article.content or ''}"
+            article_text = article_text[:2000]  # Truncate if too long
+
+            # Generate article embedding
+            article_embedding = list(model.embed([article_text]))[0]
+
+            # Check similarity against each topic (OR logic - match ANY topic)
+            for topic in topics:
+                # Generate topic embedding
+                topic_embedding = list(model.embed([topic]))[0]
+
+                # Calculate cosine similarity
+                similarity = np.dot(topic_embedding, article_embedding) / (
+                    np.linalg.norm(topic_embedding) * np.linalg.norm(article_embedding)
+                )
+
+                # If similarity meets threshold for ANY topic, collect it
+                if similarity >= 0.55:
+                    return True
+
+            # No topic matched
+            return False
+
+        except ImportError:
+            # FastEmbed not installed - collect all articles (graceful degradation)
+            return True
+        except Exception as e:
+            # Log error but don't fail collection
+            print(f"Warning: Semantic filtering error: {e}. Collecting article.")
+            return True
 
     @staticmethod
     def _check_http_status(response, url: str) -> bool:
@@ -276,16 +358,11 @@ class SimpleCollector:
                     ai_keywords_found=[]
                 )
 
-                # Calculate confidence score (includes AI keyword gate)
-                confidence = self.confidence_scorer.calculate_confidence(article)
-                article.ai_confidence = confidence
-                article.ai_review_status = self.confidence_scorer.get_review_status(confidence)
+                ai_relevant = self._is_ai_relevant(article)
+                article.ai_relevant = ai_relevant
+                article.ai_confidence = 0.8 if ai_relevant else 0.0
 
-                # Update ai_relevant based on confidence threshold
-                article.ai_relevant = (confidence >= 0.7)
-                
-                # Only add articles with confidence >= 0.7 (AI-relevant)
-                if confidence >= 0.7:
+                if ai_relevant:
                     articles.append(article)
                 
             except Exception as e:
@@ -329,56 +406,82 @@ class SimpleCollector:
         
         return data
     
-    def collect_all_feeds(self, feed_configs: List[FeedConfig], max_articles_per_feed: int = 25) -> dict:
-        """Collect articles from all configured feeds."""
+    def collect_all_feeds(self, feed_configs: List[FeedConfig], max_articles_per_feed: int = 25, topics: Optional[List[str]] = None) -> dict:
+        """Collect articles from all configured feeds.
+
+        Args:
+            feed_configs: List of feed configurations
+            max_articles_per_feed: Maximum articles to collect per feed
+            topics: Optional list of topics for semantic filtering
+
+        Returns:
+            Statistics dictionary
+        """
         stats = {
             "total_fetched": 0,
             "total_added": 0,
             "feeds_processed": 0,
-            "ai_relevant_added": 0
+            "ai_relevant_added": 0,
+            "semantic_filtered": 0
         }
-        
+
         for feed_config in feed_configs:
             if not feed_config.enabled:
                 print(f"Skipping disabled feed: {feed_config.name}")
                 continue
-            
+
             print(f"Processing feed: {feed_config.name}")
             articles = self.fetch_feed(feed_config, max_articles=max_articles_per_feed)
-            
+
+            # Apply semantic filtering if topics provided
+            if topics is not None:
+                filtered_count = 0
+                filtered_articles = []
+                for article in articles:
+                    if self.should_collect_article(article, topics):
+                        filtered_articles.append(article)
+                    else:
+                        filtered_count += 1
+                articles = filtered_articles
+                stats["semantic_filtered"] += filtered_count
+
+                if filtered_count > 0:
+                    print(f"  Semantic filter: {filtered_count}/{len(articles) + filtered_count} articles filtered")
+
             added_count = 0
             ai_count = 0
-            
+
             for article in articles:
-                start = time.time()
-                # Skip entity extraction during collection for faster performance
-                # Entities will be extracted on-demand when needed (e.g., topic digests)
                 if self.database.save_article(article, skip_entities=True):
                     added_count += 1
                     if article.ai_relevant:
                         ai_count += 1
 
-                # Track save time (entity extraction skipped)
-                duration = time.time() - start
-                method = "skipped"  # Entity extraction deferred
-                self.metrics.record_entity_extraction(duration, method)
-            
             stats["total_fetched"] += len(articles)
             stats["total_added"] += added_count
             stats["ai_relevant_added"] += ai_count
             stats["feeds_processed"] += 1
-            
+
             print(f"  Added: {added_count}/{len(articles)} articles, AI-relevant: {ai_count}")
-            
+
             # Be respectful to servers (removed sleep - too slow for 15 feeds)
-        
+
         # Log performance summary at end
         self.metrics.log_summary()
-        
+
         return stats
 
-    def collect_region(self, config: Config, region: str) -> Dict[str, Any]:
-        """Collect news from specific region only."""
+    def collect_region(self, config: Config, region: str, topics: Optional[List[str]] = None) -> Dict[str, Any]:
+        """Collect news from specific region only.
+
+        Args:
+            config: Configuration object
+            region: Region name to collect
+            topics: Optional list of topics for semantic filtering
+
+        Returns:
+            Statistics dictionary
+        """
         if region not in config.regions:
             print(f"❌ Unknown region: {region}")
             return {"feeds_processed": 0, "total_fetched": 0, "total_added": 0, "ai_relevant_added": 0}
@@ -389,35 +492,39 @@ class SimpleCollector:
             return {"feeds_processed": 0, "total_fetched": 0, "total_added": 0, "ai_relevant_added": 0}
 
         print(f"🌍 Collecting news from {region_config.name} ({region.upper()}):", flush=True)
-        
+
         stats = {
             "feeds_processed": 0,
             "total_fetched": 0,
             "total_added": 0,
-            "ai_relevant_added": 0
+            "ai_relevant_added": 0,
+            "semantic_filtered": 0
         }
-        
+
         for feed in region_config.feeds:
             if not feed.enabled:
                 continue
 
             print(f"  📡 Processing {feed.name}...", flush=True)
-            feed_stats = self._process_feed(feed, region)
-            
+            feed_stats = self._process_feed(feed, region, topics=topics)
+
             stats["feeds_processed"] += 1
             stats["total_fetched"] += feed_stats["fetched"]
             stats["total_added"] += feed_stats["added"]
             stats["ai_relevant_added"] += feed_stats["ai_relevant"]
-        
+            stats["semantic_filtered"] += feed_stats.get("semantic_filtered", 0)
+
         print(f"✅ {region_config.name} collection complete:", flush=True)
         print(f"   Feeds processed: {stats['feeds_processed']}", flush=True)
         print(f"   Articles fetched: {stats['total_fetched']}", flush=True)
         print(f"   Articles added: {stats['total_added']}", flush=True)
         print(f"   AI-relevant added: {stats['ai_relevant_added']}", flush=True)
-        
+        if stats["semantic_filtered"] > 0:
+            print(f"   Semantically filtered: {stats['semantic_filtered']}", flush=True)
+
         return stats
 
-    def collect_multiple_regions(self, config: Config, regions: List[str], parallel: bool = True) -> Dict[str, Any]:
+    def collect_multiple_regions(self, config: Config, regions: List[str], parallel: bool = True, topics: Optional[List[str]] = None) -> Dict[str, Any]:
         """Collect news from multiple regions with optimized parallel processing.
 
         Performance optimizations:
@@ -429,6 +536,7 @@ class SimpleCollector:
             config: Configuration object
             regions: List of region names to collect
             parallel: Use parallel feed fetching (default: True)
+            topics: Optional list of topics for semantic filtering
 
         Returns:
             Statistics dictionary with keys: feeds_processed, total_fetched, total_added, ai_relevant_added
@@ -469,6 +577,11 @@ class SimpleCollector:
                     feed, region = future_to_feed[future]
                     try:
                         articles = future.result()
+
+                        # Apply semantic filtering if topics provided
+                        if topics is not None:
+                            articles = [a for a in articles if self.should_collect_article(a, topics)]
+
                         # Add region to articles
                         for article in articles:
                             article.region = region
@@ -486,27 +599,17 @@ class SimpleCollector:
             ai_count = 0
 
             for article in all_articles:
-                try:
-                    start = time.time()
-                    # Skip entity extraction during collection for faster performance
-                    if self.database.save_article(article, skip_entities=True):
-                        added_count += 1
-                        if article.ai_relevant:
-                            ai_count += 1
-
-                    # Track performance (entity extraction skipped)
-                    duration = time.time() - start
-                    method = "hybrid" if self.perf_config.use_spacy_in_collection == "hybrid" else "pattern"
-                    self.metrics.record_entity_extraction(duration, method)
-                except Exception as e:
-                    print(f"❌ Error saving article: {e}")
+                if self.database.save_article(article, skip_entities=True):
+                    added_count += 1
+                    if article.ai_relevant:
+                        ai_count += 1
 
             total_stats["total_added"] = added_count  # type: ignore
             total_stats["ai_relevant_added"] = ai_count  # type: ignore
         else:
             # Sequential processing (original behavior)
             for feed, region in all_feeds:
-                feed_stats = self._process_feed(feed, region)
+                feed_stats = self._process_feed(feed, region, topics=topics)
                 total_stats["feeds_processed"] = int(total_stats.get("feeds_processed", 0)) + 1  # type: ignore
                 total_stats["total_fetched"] = int(total_stats.get("total_fetched", 0)) + feed_stats.get("fetched", 0)  # type: ignore
                 total_stats["total_added"] = int(total_stats.get("total_added", 0)) + feed_stats.get("added", 0)  # type: ignore
@@ -515,17 +618,37 @@ class SimpleCollector:
         total_stats["regions_processed"] = len(set(r for f, r in all_feeds))  # type: ignore
         return total_stats
 
-    def _process_feed(self, feed: FeedConfig, region: str = "global") -> Dict[str, Any]:
-        """Process a single feed and save articles."""
+    def _process_feed(self, feed: FeedConfig, region: str = "global", topics: Optional[List[str]] = None) -> Dict[str, Any]:
+        """Process a single feed and save articles.
+
+        Args:
+            feed: Feed configuration
+            region: Region for articles
+            topics: Optional list of topics for semantic filtering
+
+        Returns:
+            Statistics dictionary
+        """
         try:
             articles = self.fetch_feed(feed)
-            
-            stats = {"fetched": len(articles), "added": 0, "ai_relevant": 0}
-            
+
+            stats = {
+                "fetched": len(articles),
+                "added": 0,
+                "ai_relevant": 0,
+                "semantic_filtered": 0
+            }
+
             for article in articles:
                 start = time.time()
                 # Update article with region
                 article.region = region
+
+                # Apply semantic filtering if topics provided
+                if topics is not None:
+                    if not self.should_collect_article(article, topics):
+                        stats["semantic_filtered"] += 1
+                        continue
 
                 # Skip entity extraction during collection for faster performance
                 if self.database.save_article(article, skip_entities=True):
@@ -533,13 +656,14 @@ class SimpleCollector:
                     if article.ai_relevant:
                         stats["ai_relevant"] += 1
 
-                # Track entity extraction time
-                duration = time.time() - start
-                method = "hybrid" if self.perf_config.use_spacy_in_collection == "hybrid" else "pattern"
-                self.metrics.record_entity_extraction(duration, method)
-            
+            # Log semantic filtering stats if applicable
+            if topics is not None and stats["semantic_filtered"] > 0:
+                print(f"  Semantic filter: {stats['semantic_filtered']}/{stats['fetched']} articles filtered")
+                topics_str = ', '.join(topics)
+                print(f"  Topics: {topics_str}")
+
             return stats
-            
+
         except Exception as e:
             print(f"❌ Error processing {feed.name}: {e}")
-            return {"fetched": 0, "added": 0, "ai_relevant": 0}
+            return {"fetched": 0, "added": 0, "ai_relevant": 0, "semantic_filtered": 0}

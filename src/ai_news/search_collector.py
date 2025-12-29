@@ -18,7 +18,14 @@ from .database import Article, Database
 from .security_utils import (
     parse_xml_safe, clean_text_content, validate_url, safe_urlopen
 )
-from .confidence_scorer import ConfidenceScorer
+
+# Core AI keywords for simple relevance check
+CORE_AI_KEYWORDS = {
+    'machine learning', 'deep learning', 'neural network', 'artificial intelligence',
+    'gpt', 'llm', 'large language model', 'transformer', 'diffusion model',
+    'computer vision', 'natural language processing', 'nlp', 'reinforcement learning',
+    'generative ai', 'chatgpt', 'openai', 'anthropic', 'claude', 'gemini'
+}
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +78,6 @@ class SearchEngineCollector:
 
     def __init__(self, database: Database, max_workers: int = 3, fetch_content: bool = False):
         self.database = database
-        self.confidence_scorer = ConfidenceScorer(database)
         self.max_workers = max_workers
         self.fetch_content = fetch_content  # Skip full content fetch for speed
         self.headers = {
@@ -84,6 +90,11 @@ class SearchEngineCollector:
         self._lock = threading.Lock()
         self._page_fetch_count = 0
         self._max_page_fetches = 5  # Limit per search_topic call
+
+    def _is_ai_relevant(self, text: str) -> bool:
+        """Simple AI relevance check using keywords."""
+        text_lower = text.lower()
+        return any(kw in text_lower for kw in CORE_AI_KEYWORDS)
     
     def search_duckduckgo(self, query: str, max_results: int = 20) -> List[Dict[str, Any]]:
         """Search using DuckDuckGo's HTML version (no API key needed)."""
@@ -586,14 +597,14 @@ class SearchEngineCollector:
                             ai_relevant=is_ai,
                             ai_keywords_found=keywords
                         )
-                        
-                        # Calculate confidence score
-                        confidence = self.confidence_scorer.calculate_confidence(article)
-                        article.ai_confidence = confidence
-                        article.ai_review_status = self.confidence_scorer.get_review_status(confidence)
-                        
-                        # Only save if confidence ≥ 0.7 (AI-relevant)
-                        if confidence >= 0.7:
+
+                        # Simple AI relevance check
+                        ai_relevant = self._is_ai_relevant(article.title + ' ' + (article.summary or ''))
+                        article.ai_relevant = ai_relevant
+                        article.ai_confidence = 0.8 if ai_relevant else 0.0
+
+                        # Only save if AI-relevant
+                        if ai_relevant:
                             articles.append(article)
                         
                 except Exception as e:

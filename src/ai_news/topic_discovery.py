@@ -3,6 +3,8 @@ Topic Discovery System for AI News Collector
 
 Dynamically discovers related terms from collected articles to build
 keyword associations without manual maintenance.
+
+NOTE: Entity extraction removed. Using simple keyword-based discovery.
 """
 
 import re
@@ -13,10 +15,7 @@ from datetime import datetime, timedelta
 import logging
 
 from .database import Database
-from .entity_extractor import EntityExtractor
 from .text_processor import TextProcessor
-from .spacy_term_extractor import SpaCyTermExtractor, Term
-from .domain_term_filter import DomainTermFilter
 
 logger = logging.getLogger(__name__)
 
@@ -30,31 +29,11 @@ class TopicDiscovery:
     """
 
     def __init__(self, database: Database, use_spacy: bool = True):
-        """Initialize topic discovery with optional spaCy support."""
+        """Initialize topic discovery (use_spacy parameter kept for compatibility but ignored)."""
         self.database = database
         self.text_processor = TextProcessor()
-        self.use_spacy = use_spacy
-        self.entity_extractor = None
-
-        try:
-            self.entity_extractor = EntityExtractor(self.text_processor, use_spacy=False)
-        except Exception as e:
-            logger.warning(f"Entity extractor not available: {e}")
-            self.entity_extractor = None
-
-        # Initialize spaCy components if requested
-        if use_spacy:
-            try:
-                self.term_extractor = SpaCyTermExtractor()
-                self.domain_filter = DomainTermFilter()
-                logger.info("SpaCy term extraction enabled")
-            except Exception as e:
-                logger.warning(f"SpaCy unavailable, using basic extraction: {e}")
-                self.term_extractor = None
-                self.domain_filter = None
-        else:
-            self.term_extractor = None
-            self.domain_filter = None
+        self.use_spacy = False  # Disabled
+        logger.info("Topic discovery initialized (keyword-based, no entity extraction)")
 
         # Initialize discovery schema
         self._init_discovery_schema()
@@ -112,7 +91,7 @@ class TopicDiscovery:
         """
         Analyze articles to find terms that frequently appear with base terms.
 
-        Uses spaCy NER if available, falls back to basic extraction.
+        Uses simple keyword-based extraction (no entity extraction).
 
         Args:
             articles: List of article objects
@@ -128,56 +107,8 @@ class TopicDiscovery:
         # Normalize base terms
         base_terms_lower = [term.lower() for term in base_terms]
 
-        if self.term_extractor and self.domain_filter:
-            # Use spaCy-based extraction
-            return self._analyze_with_spacy(articles, base_terms_lower, topic_name, min_occurrence)
-        else:
-            # Use basic extraction
-            return self._analyze_basic(articles, base_terms_lower, topic_name, min_occurrence)
-
-    def _analyze_with_spacy(
-        self,
-        articles: List,
-        base_terms_lower: List[str],
-        topic_name: str,
-        min_occurrence: int
-    ) -> List[Tuple[str, float, int]]:
-        """Analyze using spaCy NER and domain filtering."""
-        all_terms = set()
-        article_count = 0
-
-        for article in articles:
-            # Check if article contains base term
-            text = f"{article.title} {article.content}".lower()
-            has_base_term = any(term in text for term in base_terms_lower)
-
-            if not has_base_term:
-                continue
-
-            article_count += 1
-
-            # Extract terms using spaCy
-            try:
-                terms = self.term_extractor.extract_terms(
-                    text,
-                    article_id=article.id if hasattr(article, 'id') else None
-                )
-                all_terms.update(terms)
-            except Exception as e:
-                logger.debug(f"SpaCy extraction failed for article: {e}")
-
-        # Filter and score
-        scored_terms = self.domain_filter.filter_and_score(all_terms, article_count)
-
-        # Filter by min_occurrence
-        filtered_terms = [
-            (term, confidence, count)
-            for term, confidence, count in scored_terms
-            if count >= min_occurrence
-        ]
-
-        logger.info(f"SpaCy discovered {len(filtered_terms)} terms for topic: {topic_name}")
-        return filtered_terms
+        # Use basic keyword extraction only
+        return self._analyze_basic(articles, base_terms_lower, topic_name, min_occurrence)
 
     def _analyze_basic(
         self,
@@ -233,19 +164,10 @@ class TopicDiscovery:
         return discovered
 
     def _extract_terms_from_article(self, article) -> Set[str]:
-        """Extract relevant terms from an article."""
+        """Extract relevant terms from an article using simple keyword extraction."""
         terms = set()
 
         text = f"{article.title} {article.content}"
-
-        # Extract entities if available
-        if self.entity_extractor:
-            try:
-                entities = self.entity_extractor.extract_entities(text)
-                for entity in entities:
-                    terms.add(entity.text)
-            except Exception as e:
-                logger.debug(f"Entity extraction failed: {e}")
 
         # Extract key phrases using text processor
         try:

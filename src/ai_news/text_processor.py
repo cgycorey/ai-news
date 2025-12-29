@@ -72,8 +72,6 @@ def _import_textblob():
     return TextBlob
 import logging
 
-from .spacy_utils import load_spacy_model
-
 logger = logging.getLogger(__name__)
 
 # Import NLTK utilities for persistent caching
@@ -195,20 +193,9 @@ class TextProcessor:
         self.html_tag_pattern = re.compile(r'<[^>]+>')
         self.whitespace_pattern = re.compile(r'\s+')
         self.punctuation_pattern = re.compile(f'[{re.escape(string.punctuation)}]')
-        
-        # Load spaCy model
-        self._load_spacy_model()
-    
-    def _load_spacy_model(self):
-        """Load spaCy model for advanced NLP."""
-        self.nlp = load_spacy_model(self.spacy_model_name, auto_download=False)
-        if self.nlp:
-            logger.info(f"Loaded spaCy model: {self.spacy_model_name}")
-        else:
-            logger.warning(f"spaCy model {self.spacy_model_name} not found. Using basic processing.")
-            logger.info(f"Run 'uv run ai-news setup-spacy' to download required models")
-            logger.info("spaCy model should be included with the project")
-            self.nlp = None
+
+        # spaCy disabled - using basic processing only
+        self.nlp = None
     
     def clean_html(self, text: str) -> str:
         """Clean HTML content and extract meaningful text securely.
