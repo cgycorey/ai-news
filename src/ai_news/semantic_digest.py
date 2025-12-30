@@ -11,6 +11,7 @@ import numpy as np
 from urllib.parse import urlparse, urlunparse
 from collections import defaultdict
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -126,12 +127,14 @@ class SemanticDigestGenerator:
         domain_specific = len(domain_keywords) > 0
 
         # Pre-filter articles by domain keywords BEFORE embedding
-        # Use keyword-matched articles (they're the most relevant)
+        # Use regex with space/punctuation boundaries to avoid substring matches
+        # This prevents "art" from matching "artificial intelligence"
         if domain_keywords:
             keyword_matched = []
             for article in dated_articles:
-                article_text = f"{article.title} {article.summary or ''} {article.content or ''}".lower()
-                if any(kw in article_text for kw in domain_keywords):
+                article_text = f" {article.title} {article.summary or ''} {article.content or ''} ".lower()
+                # Check each keyword is surrounded by spaces or punctuation (not part of another word)
+                if any(re.search(r'(^|[\s\W_])' + re.escape(kw) + r'($|[\s\W_])', article_text) for kw in domain_keywords):
                     keyword_matched.append(article)
 
             # Use keyword-matched articles (they're most relevant)
@@ -183,12 +186,13 @@ class SemanticDigestGenerator:
 
             # Title keyword boost: Give higher score if article TITLE mentions domain keywords
             article_title_lower = article.title.lower() if article.title else ''
-            has_title_keywords = any(kw in article_title_lower for kw in domain_keywords) if domain_keywords else False
+            # Use space/punctuation boundaries to match standalone words only
+            has_title_keywords = any(re.search(r'(^|[\s\W_])' + re.escape(kw) + r'($|[\s\W_])', article_title_lower) for kw in domain_keywords) if domain_keywords else False
             title_boost = 0.10 if has_title_keywords else 0.0  # Strong boost for title matches
 
             # Content/domain keyword boost (weaker)
-            article_text = f"{article.title} {article.summary or ''} {article.content or ''}".lower()
-            has_domain_relevance = any(kw in article_text for kw in domain_keywords) if domain_keywords else False
+            article_text = f" {article.title} {article.summary or ''} {article.content or ''} ".lower()
+            has_domain_relevance = any(re.search(r'(^|[\s\W_])' + re.escape(kw) + r'($|[\s\W_])', article_text) for kw in domain_keywords) if domain_keywords else False
             domain_boost = 0.05 if has_domain_relevance else 0.0
 
             # Date recency boost (articles from today get +0.07, decay over 7 days)

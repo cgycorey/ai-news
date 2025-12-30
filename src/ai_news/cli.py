@@ -579,7 +579,8 @@ def main():
     collect_parser.add_argument('--topics', help='Collect only for specific topics (comma-separated, topic-focused collection)')
     collect_parser.add_argument('--trending', action='store_true', help='Collect trending topics across multiple domains (retail, healthcare, education, etc.)')
     collect_parser.add_argument('--ai-only', action='store_true', help='Filter to AI-relevant articles only (reduces noise)')
-    collect_parser.add_argument('--websearch', action='store_true', help='Use web search instead of RSS feeds (topic-focused, AI-relevant)')
+    collect_parser.add_argument('--websearch', action='store_true', help='Use web search for topic-focused collection (fast, AI-relevant)')
+    collect_parser.add_argument('--rss', action='store_true', help='Also collect from RSS feeds (more time-relevant, runs after websearch)')
     collect_parser.add_argument('--force', action='store_true', help='Auto-kill existing collection processes without prompting')
     
     # List command
@@ -973,8 +974,10 @@ def main():
                 print(f"   Total collected: {len(articles)}")
                 print(f"   Articles added: {added_count}")
 
-            # Topic-focused RSS collection (always runs after websearch if topics specified)
-            if getattr(args, 'topics', None):
+            # Topic-focused RSS collection (runs after websearch if --rss flag is set)
+            # RSS is more time-relevant - fresh from source
+            # Use --rss flag to include RSS after websearch
+            if getattr(args, 'topics', None) and (not getattr(args, 'websearch', False) or getattr(args, 'rss', False)):
                 topics = [t.strip() for t in args.topics.split(',')]
 
                 print("\n" + "="*60)
