@@ -1966,167 +1966,22 @@ def _process_arbitrary_topics(topics: List[str]) -> List[List[str]]:
 # Enhanced multi-keyword command handlers
 def handle_multi_command(args, database):
     """Handle enhanced multi-keyword search command with arbitrary topic support."""
-    try:
-        print(f"🔍 Initializing enhanced multi-keyword search...")
-        
-        # Check if user provided arbitrary topics (not in predefined categories)
-        predefined_categories = ['ai', 'ml', 'insurance', 'healthcare', 'fintech']
-        user_topics = [k.lower() for k in args.keywords]
-        
-        # If user topics include non-predefined categories, use arbitrary mode
-        if not all(topic in predefined_categories for topic in user_topics):
-            print("🎯 Arbitrary topics detected - using arbitrary topic mode")
-            return _handle_arbitrary_multi_command(args, database)
-        
-        # Original multi command logic for predefined categories
-        # Lazy import enhanced collector
-        from .enhanced_collector import EnhancedMultiKeywordCollector
-        
-        # Initialize enhanced collector
-        enhanced_collector = EnhancedMultiKeywordCollector(performance_mode=True)
-        print(f"✅ Enhanced collector initialized")
-        
-        # Build keyword categories from query parts
-        categories = {}
-        category_mapping = {
-            'ai': enhanced_collector.categories['ai'].keywords,
-            'ml': ['ML', 'machine learning', 'deep learning', 'neural network', 'algorithm'],
-            'insurance': enhanced_collector.categories['insurance'].keywords,
-            'healthcare': enhanced_collector.categories['healthcare'].keywords,
-            'fintech': enhanced_collector.categories['fintech'].keywords
-        }
-        
-        for keyword in args.keywords:
-            keyword_lower = keyword.lower()
-            if keyword_lower in category_mapping:
-                categories[keyword_lower] = category_mapping[keyword_lower]
-        
-        if not categories:
-            print("❌ No valid keyword categories found.")
-            print("💡 Available categories: ai, ml, insurance, healthcare, fintech")
-            print('💡 For arbitrary topics: ai-news multi "renewable energy" AI')
-            return
-        
-        print(f"🔍 Enhanced multi-keyword search: {' + '.join(args.keywords)}")
-        print(f"🌍 Region: {args.region.upper()}")
-        print(f"📊 Minimum score: {args.min_score}")
-        print()
-        
-        # Get articles from database
-        print(f"📊 Fetching articles from database (region: {args.region.upper()})...")
-        # Use appropriate limit based on args
-        search_limit = min(1000, args.limit * 10)  # Get more articles for better matching
-        articles = database.get_articles(limit=search_limit, region=args.region if args.region != 'global' else None)
-        print(f"✅ Retrieved {len(articles)} articles")
-        
-        if len(articles) == 0:
-            print("❌ No articles found in database for this region")
-            print("💡 Try running 'uv run ai-news collect' to populate the database first")
-            return
-        
-        # Filter articles using enhanced analysis
-        print(f"🔍 Analyzing articles for relevance...")
-        filtered_results = []
-        
-        for i, article in enumerate(articles):
-            if i % 100 == 0 and i > 0:
-                print(f"   Progress: {i}/{len(articles)} articles analyzed...")
-                
-            result = enhanced_collector.analyze_multi_keywords(
-                title=article.title,
-                content=article.content,
-                categories=categories,
-                region=args.region,
-                min_score=args.min_score
-            )
-            
-            if result.is_relevant:
-                filtered_results.append((article, result))
-        
-        print(f"✅ Analysis complete: {len(filtered_results)} relevant articles found")
-        
-        # Sort by final score
-        filtered_results.sort(key=lambda x: x[1].final_score, reverse=True)
-        
-        # Display results
-        if not filtered_results:
-            print("🔍 No articles found matching your criteria.")
-            print("💡 Try lowering the minimum score with --min-score 0.05")
-            return
-        
-        print(f"\n🎯 Found {len(filtered_results)} matching articles:")
-        print("=" * 80)
-        
-        for i, (article, result) in enumerate(filtered_results[:args.limit], 1):
-            # Article header
-            relevance_indicator = "🤖" if article.ai_relevant else "  "
-            print(f"{i}. {relevance_indicator} {article.title}")
-            
-            # Article metadata
-            date_str = article.published_at.strftime("%Y-%m-%d") if article.published_at else "Unknown"
-            print(f"   📅 {date_str} | 📰 {article.source_name} | 🌍 {article.region.upper()}")
-            
-            # Enhanced scores
-            print(f"   📊 Final Score: {result.final_score:.3f}")
-            print(f"   🎯 Total Score: {result.total_score:.3f} | Intersection: {result.intersection_score:.3f}")
-            
-            # Category scores
-            if result.category_scores:
-                categories_text = ", ".join([f"{cat}: {score:.2f}" for cat, score in result.category_scores.items()])
-                print(f"   📈 Categories: {categories_text}")
-            
-            # Top keyword matches (if details requested)
-            if args.details and result.matches:
-                print(f"   🔍 Top matches:")
-                for match in result.matches[:3]:
-                    print(f"      • {match.keyword} ({match.category}): {match.score:.3f}")
-                    if len(match.context) > 60:
-                        context = match.context[:60] + "..."
-                    else:
-                        context = match.context
-                    print(f"        Context: {context}")
-            
-            # Content snippet
-            snippet = article.summary or article.content[:150]
-            if len(snippet) > 150:
-                snippet = snippet[:150] + "..."
-            print(f"   📄 {snippet}")
-            
-            print(f"   🔗 {article.url}")
-            print()
-        
-        # Generate coverage report
-        if filtered_results:
-            print("\n" + "=" * 50)
-            print("ENHANCED SEARCH SUMMARY")
-            print("=" * 50)
-            
-            # Category statistics
-            category_stats = {}
-            for _, result in filtered_results[:args.limit]:
-                for category, score in result.category_scores.items():
-                    if category not in category_stats:
-                        category_stats[category] = {'count': 0, 'total_score': 0}
-                    category_stats[category]['count'] += 1
-                    category_stats[category]['total_score'] += score
-            
-            for category, stats in category_stats.items():
-                avg_score = stats['total_score'] / stats['count']
-                print(f"{category.upper()}: {stats['count']} articles (avg score: {avg_score:.3f})")
-            
-            # Performance summary
-            avg_score = sum(r.final_score for _, r in filtered_results[:args.limit]) / len(filtered_results[:args.limit])
-            print(f"\nAverage relevance score: {avg_score:.3f}")
-            print(f"High relevance articles (score > 0.5): {sum(1 for _, r in filtered_results[:args.limit] if r.final_score > 0.5)}")
-            print("=" * 50)
-        
-    except ImportError as e:
-        print(f"❌ Enhanced multi-keyword functionality not available: {e}")
-        print("💡 Make sure enhanced_collector.py is available")
-    except Exception as e:
-        print(f"❌ Error during multi-keyword search: {e}")
-        import traceback
-        traceback.print_exc()
+    print("="*60)
+    print("⚠️  DEPRECATION NOTICE")
+    print("="*60)
+    print("The 'multi' command is deprecated and has been removed.")
+    print()
+    print("✨ Use these commands instead:")
+    print()
+    print("📊 For topic digests (finds articles matching your topics):")
+    print("   ai-news digest --type topic --topic AI healthcare")
+    print()
+    print("🔍 For collection (collects new articles for your topics):")
+    print("   ai-news collect --websearch --topics ai,healthcare")
+    print()
+    print("💡 Both commands use semantic embeddings (FastEmbed) for")
+    print("   better quality multi-topic intersection detection.")
+    print("="*60)
 
 
 def handle_demo_command(args, database):
