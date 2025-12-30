@@ -169,10 +169,15 @@ class SemanticDigestGenerator:
 
         topic_embedding = list(model.embed([topic_query]))[0]
 
-        # Use higher threshold for domain-specific topics to maintain quality
-        effective_threshold = self.min_similarity
-        if domain_specific:
-            effective_threshold = max(self.min_similarity, 0.55)  # At least 55% for domain topics
+        # Hybrid search: adjust threshold based on keyword filtering
+        # If we pre-filtered by keywords, we can use lower threshold (articles already relevant)
+        # If no keyword filtering, use higher threshold for quality
+        if domain_specific and len(dated_articles) < 100:  # Keyword-filtered results
+            effective_threshold = max(self.min_similarity, 0.45)  # Lower threshold for pre-filtered
+        elif domain_specific:  # Domain topic but no keyword matches
+            effective_threshold = max(self.min_similarity, 0.55)  # Higher threshold for quality
+        else:  # General AI topic
+            effective_threshold = self.min_similarity
 
         # Calculate similarities with date boost AND title keyword boost
         scored_articles = []
@@ -185,15 +190,17 @@ class SemanticDigestGenerator:
             )
 
             # Title keyword boost: Give higher score if article TITLE mentions domain keywords
+            # Strong boost (0.25) for keyword-filtered articles to prioritize exact matches
             article_title_lower = article.title.lower() if article.title else ''
             # Use space/punctuation boundaries to match standalone words only
             has_title_keywords = any(re.search(r'(^|[\s\W_])' + re.escape(kw) + r'($|[\s\W_])', article_title_lower) for kw in domain_keywords) if domain_keywords else False
-            title_boost = 0.10 if has_title_keywords else 0.0  # Strong boost for title matches
+            title_boost = 0.25 if has_title_keywords else 0.0  # Strong boost for title matches
 
-            # Content/domain keyword boost (weaker)
+            # Content/domain keyword boost (medium boost)
+            # Helps keyword-filtered articles rank higher
             article_text = f" {article.title} {article.summary or ''} {article.content or ''} ".lower()
             has_domain_relevance = any(re.search(r'(^|[\s\W_])' + re.escape(kw) + r'($|[\s\W_])', article_text) for kw in domain_keywords) if domain_keywords else False
-            domain_boost = 0.05 if has_domain_relevance else 0.0
+            domain_boost = 0.15 if has_domain_relevance else 0.0
 
             # Date recency boost (articles from today get +0.07, decay over 7 days)
             if article.published_at:
