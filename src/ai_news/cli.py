@@ -577,6 +577,7 @@ def main():
     collect_parser.add_argument('--region', choices=['us', 'uk', 'eu', 'apac', 'global'], help='Collect from specific region only')
     collect_parser.add_argument('--regions', help='Collect from multiple regions (comma-separated)')
     collect_parser.add_argument('--topics', help='Collect only for specific topics (comma-separated, topic-focused collection)')
+    collect_parser.add_argument('--trending', action='store_true', help='Collect trending topics across multiple domains (retail, healthcare, education, etc.)')
     collect_parser.add_argument('--ai-only', action='store_true', help='Filter to AI-relevant articles only (reduces noise)')
     collect_parser.add_argument('--websearch', action='store_true', help='Use web search instead of RSS feeds (topic-focused, AI-relevant)')
     collect_parser.add_argument('--force', action='store_true', help='Auto-kill existing collection processes without prompting')
@@ -902,7 +903,7 @@ def main():
             force_kill = getattr(args, 'force', False)
             check_and_kill_old_processes(force=force_kill)
 
-            # Check if using websearch mode (topic-focused, AI-relevant)
+            # Check if using websearch mode or trending topics
             if getattr(args, 'websearch', False):
                 if not getattr(args, 'topics', None):
                     print("⚠️  --websearch requires --topics to be specified")
@@ -945,6 +946,32 @@ def main():
 
                 print(f"\n🔍 Websearch: {total_articles} AI-relevant articles collected")
                 print("✓ All articles are topic-focused and AI-relevant")
+
+            # Trending topics collection (default behavior when no topics specified)
+            elif not getattr(args, 'topics', None) and not getattr(args, 'region', None):
+                print("\n" + "="*60)
+                print("🔍 TRENDING TOPICS COLLECTION")
+                print("="*60)
+                print("✓ Collecting AI articles across trending topics")
+                print("✓ Domains: healthcare, finance, retail, education, etc.\n")
+
+                from .search_collector import SearchEngineCollector
+                
+                search_collector = SearchEngineCollector(database, max_workers=3)
+                
+                # Collect trending topics
+                print("🌐 Searching trending AI topics...\n")
+                articles = search_collector.collect_trending_topics(parallel=True)
+                
+                # Save to database
+                added_count = 0
+                for article in articles:
+                    if database.save_article(article, auto_tag=False):
+                        added_count += 1
+
+                print(f"\n✅ Trending collection complete:")
+                print(f"   Total collected: {len(articles)}")
+                print(f"   Articles added: {added_count}")
 
             # Topic-focused RSS collection (always runs after websearch if topics specified)
             if getattr(args, 'topics', None):

@@ -339,15 +339,15 @@ class Database:
         finally:
             lock.release()
     
-    def save_article(self, article: Article, auto_tag: bool = True, skip_entities: bool = False) -> Optional[int]:
-        """Save an article to the database with automatic deduplication and entity tagging.
+    def save_article(self, article: Article, auto_tag: bool = False, skip_entities: bool = True) -> Optional[int]:
+        """Save an article to the database with automatic deduplication.
 
         Thread-safe: Uses global write lock to prevent concurrent database writes.
 
         Args:
             article: Article object to save
-            auto_tag: Whether to automatically extract and save entity tags (default: True)
-            skip_entities: Skip entity extraction entirely for faster collection (default: False)
+            auto_tag: Ignored (entity extraction removed)
+            skip_entities: Ignored (entity extraction removed)
 
         Returns:
             Article ID if saved, existing ID if duplicate, None on error
@@ -409,15 +409,7 @@ class Database:
 
                         article_id = cursor.lastrowid
 
-                        # Auto-tag within SAME connection and lock to prevent concurrent writes
-                        # Only tag AI-relevant articles to save time
-                        # Skip entity extraction if requested (for faster collection)
-                        if auto_tag and article_id and article.ai_relevant and not skip_entities:
-                            try:
-                                self._auto_tag_article_in_transaction(article_id, article, conn)
-                            except Exception as e:
-                                logger.warning(f"Auto-tagging failed for article {article_id}: {e}")
-
+                        # Commit transaction
                         conn.commit()
 
         except sqlite3.Error as e:
@@ -434,7 +426,7 @@ class Database:
             article: Article object
             conn: Active SQLite connection
         """
-        from .article_tagger import get_article_tagger
+        # Entity extraction removed
 
         tagger = get_article_tagger()
         tags = tagger.tag_article(article)
@@ -478,7 +470,7 @@ class Database:
             article: Article object
         """
         try:
-            from .article_tagger import get_article_tagger
+            # Entity extraction removed
 
             tagger = get_article_tagger()
             tags = tagger.tag_article(article)
@@ -561,7 +553,7 @@ class Database:
             Number of entities extracted and saved
         """
         try:
-            from .article_tagger import get_article_tagger
+            # Entity extraction removed
 
             # Load article
             article = self.get_article_by_id(article_id)

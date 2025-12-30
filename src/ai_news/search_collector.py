@@ -658,7 +658,7 @@ class SearchEngineCollector:
 
                         # Filter and save AI-relevant articles
                         for article in articles:
-                            if self.database.save_article(article, auto_tag=True):
+                            if self.database.save_article(article, auto_tag=False):
                                 all_articles.append(article)
 
                     except Exception as e:
@@ -671,7 +671,7 @@ class SearchEngineCollector:
 
                 added_count = 0
                 for article in articles:
-                    if self.database.save_article(article, auto_tag=True):
+                    if self.database.save_article(article, auto_tag=False):
                         added_count += 1
                         all_articles.append(article)
 
