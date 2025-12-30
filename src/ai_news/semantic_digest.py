@@ -11,7 +11,6 @@ import numpy as np
 from urllib.parse import urlparse, urlunparse
 from collections import defaultdict
 import logging
-import re
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +84,7 @@ class SemanticDigestGenerator:
 
         # Get articles with date filter in query (more efficient)
         # Reduce limit to avoid fetching too many
-        articles = self.db.get_articles(limit=100, ai_only=ai_only)
+        articles = self.db.get_articles(limit=500, ai_only=ai_only)
 
         if not articles:
             return {
@@ -111,11 +110,42 @@ class SemanticDigestGenerator:
                 'error': f'No articles in last {days} days'
             }
 
-        # Pure semantic matching - no keyword filtering
-        # FastEmbed handles topic matching automatically
-        # Limit to 50 articles for performance (was 100)
-        dated_articles = dated_articles[:50]
-        logger.info(f"Using {len(dated_articles)} articles for semantic matching")
+        # Extract domain keywords from topics dynamically
+        # The user's query IS the context - no hardcoded domain lists
+        domain_keywords = set()
+
+        for topic in topics:
+            # Extract meaningful words from topics
+            words = topic.lower().split()
+            for w in words:
+                if len(w) > 3 and w not in {'artificial', 'intelligence', 'machine'}:
+                    domain_keywords.add(w)
+
+        # Use query as context - "education learning" means learning in education context
+        # Semantic embeddings will handle this automatically
+        domain_specific = len(domain_keywords) > 0
+
+        # Pre-filter articles by domain keywords BEFORE embedding
+        # Use keyword-matched articles (they're the most relevant)
+        if domain_keywords:
+            keyword_matched = []
+            for article in dated_articles:
+                article_text = f"{article.title} {article.summary or ''} {article.content or ''}".lower()
+                if any(kw in article_text for kw in domain_keywords):
+                    keyword_matched.append(article)
+
+            # Use keyword-matched articles (they're most relevant)
+            # Limit to 100 max for performance
+            if keyword_matched:
+                dated_articles = keyword_matched[:100]
+                logger.info(f"Keyword filtering: {len(keyword_matched)} articles matched")
+            else:
+                # No keyword matches - use general articles
+                dated_articles = dated_articles[:100]
+                logger.info("No keyword matches, using general articles")
+        else:
+            # No domain keywords - general AI topic
+            dated_articles = dated_articles[:100]
 
         # Get model
         model = self._get_model()
@@ -130,17 +160,18 @@ class SemanticDigestGenerator:
         article_embeddings = list(model.embed(article_texts))
 
         # Combine topics into single query with better phrasing
-        # Default: prepend "AI" since this is AI news
         topic_query = " ".join(topics)
         if not any('ai' in t.lower() for t in topics):
             topic_query = f"AI {topic_query}"
 
         topic_embedding = list(model.embed([topic_query]))[0]
 
-        # Use fixed threshold for all topics
+        # Use higher threshold for domain-specific topics to maintain quality
         effective_threshold = self.min_similarity
+        if domain_specific:
+            effective_threshold = max(self.min_similarity, 0.55)  # At least 55% for domain topics
 
-        # Calculate similarities with date boost
+        # Calculate similarities with date boost AND title keyword boost
         scored_articles = []
         now = datetime.now()
         seen_urls = set()  # Track normalized URLs for deduplication
@@ -150,6 +181,16 @@ class SemanticDigestGenerator:
                 np.linalg.norm(topic_embedding) * np.linalg.norm(emb)
             )
 
+            # Title keyword boost: Give higher score if article TITLE mentions domain keywords
+            article_title_lower = article.title.lower() if article.title else ''
+            has_title_keywords = any(kw in article_title_lower for kw in domain_keywords) if domain_keywords else False
+            title_boost = 0.10 if has_title_keywords else 0.0  # Strong boost for title matches
+
+            # Content/domain keyword boost (weaker)
+            article_text = f"{article.title} {article.summary or ''} {article.content or ''}".lower()
+            has_domain_relevance = any(kw in article_text for kw in domain_keywords) if domain_keywords else False
+            domain_boost = 0.05 if has_domain_relevance else 0.0
+
             # Date recency boost (articles from today get +0.07, decay over 7 days)
             if article.published_at:
                 days_old = (now - article.published_at.replace(tzinfo=None)).days
@@ -157,7 +198,7 @@ class SemanticDigestGenerator:
             else:
                 recency_boost = 0
 
-            final_score = similarity + recency_boost
+            final_score = similarity + title_boost + domain_boost + recency_boost
 
             if similarity >= effective_threshold:
                 # Normalize URL for deduplication
@@ -170,16 +211,21 @@ class SemanticDigestGenerator:
         scored_articles.sort(key=lambda x: x[2], reverse=True)
 
         # Apply source diversity: max 2 articles per source in top results
+        # Skip for domain-specific topics (fewer articles, need all matches)
         diversified_results = []
-        source_counts = defaultdict(int)
-        for article, similarity, final_score in scored_articles:
-            source = article.source_name
-            if source_counts[source] < 2:  # Max 2 per source
-                diversified_results.append((article, similarity, final_score))
-                source_counts[source] += 1
+        if not domain_specific:
+            source_counts = defaultdict(int)
+            for article, similarity, final_score in scored_articles:
+                source = article.source_name
+                if source_counts[source] < 2:  # Max 2 per source
+                    diversified_results.append((article, similarity, final_score))
+                    source_counts[source] += 1
 
-            if len(diversified_results) >= top_k:
-                break
+                if len(diversified_results) >= top_k:
+                    break
+        else:
+            # Domain topics: no source diversity limit
+            diversified_results = scored_articles[:top_k]
 
         results = diversified_results
 
