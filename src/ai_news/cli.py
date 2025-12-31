@@ -545,8 +545,8 @@ def check_and_kill_old_processes(force=False):
             old_pids = [pid for pid in pids if pid != current_pid]
 
             if old_pids:
-                print(f"⚠️  Found {len(old_pids)} existing ai-news collect process(es): {', '.join(old_pids)}")
-                print("🔧 Auto-killing old processes...")
+                print(f"⚠️  Found {len(old_pids)} existing ai-news collect process(es): {', '.join(old_pids)}", flush=True)
+                print("🔧 Auto-killing old processes...", flush=True)
                 
                 for pid in old_pids:
                     try:
