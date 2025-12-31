@@ -96,20 +96,28 @@ class SemanticDigestGenerator:
                 'error': 'No articles found'
             }
 
-        # Filter by date (done in Python, but only on fetched results)
+        # Separate dated and undated articles
         dated_articles = [
             a for a in articles
             if a.published_at and a.published_at.replace(tzinfo=None) >= cutoff_date
         ]
+        
+        undated_articles = [
+            a for a in articles
+            if not a.published_at or a.published_at.replace(tzinfo=None) < cutoff_date
+        ]
 
-        if not dated_articles:
+        if not dated_articles and not undated_articles:
             return {
                 'topics': topics,
                 'articles': [],
                 'total': 0,
                 'method': 'semantic_fastembed',
-                'error': f'No articles in last {days} days'
+                'error': f'No articles found'
             }
+        
+        # Log what we have
+        logger.info(f"Found {len(dated_articles)} dated articles, {len(undated_articles)} undated/older articles")
 
         # Extract domain keywords from topics dynamically
         # The user's query IS the context - no hardcoded domain lists
@@ -220,6 +228,58 @@ class SemanticDigestGenerator:
 
         # Sort by final_score (similarity + recency)
         scored_articles.sort(key=lambda x: x[2], reverse=True)
+
+        # If we don't have enough dated articles, add undated articles
+        if len(scored_articles) < top_k and undated_articles:
+            logger.info(f"Adding undated/older articles to reach {top_k} results")
+            
+            # Pre-filter undated by domain keywords if applicable
+            if domain_keywords:
+                keyword_matched = []
+                for article in undated_articles:
+                    article_text = f" {article.title} {article.summary or ''} {article.content or ''} ".lower()
+                    if any(re.search(r'(^|[\s\W_])' + re.escape(kw) + r'($|[\s\W_])', article_text) for kw in domain_keywords):
+                        keyword_matched.append(article)
+                undated_to_process = keyword_matched[:50]  # Limit undated
+            else:
+                undated_to_process = undated_articles[:50]
+            
+            # Score undated articles
+            if undated_to_process:
+                undated_texts = []
+                for article in undated_to_process:
+                    text = f"{article.title}. {article.summary or article.content or ''}"
+                    undated_texts.append(text[:2000])
+                
+                undated_embeddings = list(model.embed(undated_texts))
+                
+                for article, emb in zip(undated_to_process, undated_embeddings):
+                    # Check for duplicates
+                    normalized_url = self._normalize_url(article.url)
+                    if normalized_url in seen_urls:
+                        continue
+                    
+                    similarity = np.dot(topic_embedding, emb) / (
+                        np.linalg.norm(topic_embedding) * np.linalg.norm(emb)
+                    )
+                    
+                    # No recency boost for undated articles
+                    article_title_lower = article.title.lower() if article.title else ''
+                    has_title_keywords = any(re.search(r'(^|[\s\W_])' + re.escape(kw) + r'($|[\s\W_])', article_title_lower) for kw in domain_keywords) if domain_keywords else False
+                    title_boost = 0.25 if has_title_keywords else 0.0
+                    
+                    article_text = f" {article.title} {article.summary or ''} {article.content or ''} ".lower()
+                    has_domain_relevance = any(re.search(r'(^|[\s\W_])' + re.escape(kw) + r'($|[\s\W_])', article_text) for kw in domain_keywords) if domain_keywords else False
+                    domain_boost = 0.15 if has_domain_relevance else 0.0
+                    
+                    final_score = similarity + title_boost + domain_boost  # No recency boost
+                    
+                    if similarity >= effective_threshold:
+                        seen_urls.add(normalized_url)
+                        scored_articles.append((article, similarity, final_score))
+                
+                # Re-sort after adding undated
+                scored_articles.sort(key=lambda x: x[2], reverse=True)
 
         # Apply source diversity: max 2 articles per source in top results
         # Skip for domain-specific topics (fewer articles, need all matches)

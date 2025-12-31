@@ -5,12 +5,15 @@ import argparse
 import os
 import signal
 import subprocess
+import logging
 from pathlib import Path
 from textwrap import fill
 from datetime import datetime, timedelta
 import json
 import sqlite3
 from typing import List
+
+logger = logging.getLogger(__name__)
 
 # Core imports (fast)
 from .config import Config
@@ -19,6 +22,7 @@ from .collector import SimpleCollector
 from .search_collector import SearchEngineCollector
 from .markdown_generator import MarkdownGenerator
 from .topic_discovery import create_topic_discovery
+from .adaptive_threshold import calculate_adaptive_threshold
 
 # Heavy imports will be loaded lazily when needed
 # from .entity_extractor import create_entity_extractor
@@ -934,21 +938,77 @@ def main():
 
                 print(f"📊 Executing {len(search_plans)} searches...")
                 total_articles = 0
+                all_results = []  # Store results for saving
 
                 for i, plan in enumerate(search_plans, 1):
                     query = f"AI {plan['query']}" if 'query' in plan else 'AI ' + ' + '.join(plan['topics'])
                     print(f"   {i}/{len(search_plans)}: {query}")
 
-                    min_confidence = getattr(args, 'min_confidence', 0.5)
+                    # Two-pass collection: start low, adapt based on quality
+                    initial_threshold = 0.3
                     result = _execute_search_plan(
                         plan, i, len(search_plans),
                         search_collector, optimizer, database,
-                        limit=50, min_confidence=min_confidence
+                        limit=50, min_confidence=initial_threshold
                     )
+
+                    # Analyze quality and calculate adaptive threshold
+                    final_threshold = calculate_adaptive_threshold(
+                        topics[0],
+                        result.get('articles', []),
+                        initial_threshold
+                    )
+
+                    # Re-filter if threshold increased
+                    if final_threshold > initial_threshold:
+                        original_count = len(result.get('articles', []))
+                        filtered_articles = []
+                        for a in result.get('articles', []):
+                            # Extract intersection_confidence if available
+                            conf = 0.3
+                            for kw in (a.ai_keywords_found or []):
+                                if isinstance(kw, str) and kw.startswith('intersection_confidence:'):
+                                    try:
+                                        conf = float(kw.split(':')[1])
+                                        break
+                                    except (ValueError, IndexError):
+                                        pass
+                            # Fallback to ai_confidence
+                            if conf == 0.3:
+                                conf = getattr(a, 'ai_confidence', 0.3)
+                            
+                            if conf >= final_threshold:
+                                filtered_articles.append(a)
+                        
+                        result['articles'] = filtered_articles
+                        result['count'] = len(filtered_articles)
+                        logger.info(f"Adaptive threshold: {initial_threshold} → {final_threshold}, kept {result['count']}/{original_count} articles")
+                    
                     total_articles += result['count']
+                    all_results.append(result)  # Store result for saving
 
                 print(f"\n🔍 Websearch: {total_articles} AI-relevant articles collected")
                 print("✓ All articles are topic-focused and AI-relevant")
+                
+                # Save websearch articles to database
+                saved_count = 0
+                for result in all_results:
+                    for article in result.get('articles', []):
+                        if database.save_article(article, auto_tag=False):
+                            saved_count += 1
+                
+                print(f"✓ Saved {saved_count}/{total_articles} articles to database")
+                
+                # Apply semantic filtering to improve quality
+                from .rss_semantic_filter import filter_rss_by_topic
+                threshold = 0.6  # Higher threshold for websearch since it's noisy
+                print(f"\n📋 Applying semantic filter to websearch results (threshold: {threshold})...")
+                
+                # Get all articles from database
+                all_articles = database.get_articles(limit=10000)
+                filtered = filter_rss_by_topic(database, topics, threshold)
+                
+                print(f"✅ Semantic filtering: {len(all_articles)} → {len(filtered)} topic-relevant articles")
 
             # Trending topics collection (default behavior when no topics specified)
             elif not getattr(args, 'topics', None) and not getattr(args, 'region', None):
@@ -987,37 +1047,68 @@ def main():
                 print("="*60)
                 print(f"📋 Topics: {', '.join(topics)}")
 
-                # Use topics directly without requiring config validation
-                # Any topic keyword can be used for filtering
-                valid_topics = topics
-                
-                collector = SimpleCollector(database)
-                total_stats = {"feeds_processed": 0, "total_fetched": 0, "total_added": 0, "ai_relevant_added": 0}
+                # Topic-focused RSS collection with semantic filtering
+                if getattr(args, 'websearch', False) and getattr(args, 'rss', False):
+                    print(f"\n📋 RSS collection for topics: {', '.join(topics)}")
 
-                # Collect from all regions
-                for region_code, region_config in config.regions.items():
-                    if region_config.enabled:
-                        region_stats = collector.collect_region(config, region_code)
-                        total_stats["feeds_processed"] += region_stats["feeds_processed"]
-                        total_stats["total_fetched"] += region_stats["total_fetched"]
-                        total_stats["total_added"] += region_stats["total_added"]
-                        total_stats["ai_relevant_added"] += region_stats["ai_relevant_added"]
+                    # Collect RSS feeds first
+                    collector = SimpleCollector(database)
+                    total_stats = {"feeds_processed": 0, "total_fetched": 0, "total_added": 0, "ai_relevant_added": 0}
 
-                print(f"\n📊 Collection Summary:")
-                print(f"   Feeds processed: {total_stats['feeds_processed']}")
-                print(f"   Total articles: {total_stats['total_added']}")
-                print(f"   AI-relevant: {total_stats['ai_relevant_added']}")
+                    for region_code, region_config in config.regions.items():
+                        if region_config.enabled:
+                            region_stats = collector.collect_region(config, region_code)
+                            total_stats["feeds_processed"] += region_stats["feeds_processed"]
+                            total_stats["total_fetched"] += region_stats["total_fetched"]
+                            total_stats["total_added"] += region_stats["total_added"]
+                            total_stats["ai_relevant_added"] += region_stats["ai_relevant_added"]
 
-                # Show topic-specific stats
-                print(f"\n📈 Topic Relevance:")
-                for topic in valid_topics:
-                    # Search articles with this topic in keywords
-                    articles = database.get_articles_by_keywords([topic], limit=100)
-                    if articles:
-                        ai_count = sum(1 for a in articles if a.ai_relevant)
-                        print(f"   • {topic}: {len(articles)} articles ({ai_count} AI-relevant)")
-                    else:
-                        print(f"   • {topic}: No articles found")
+                    print(f"\n📊 Raw RSS Collection:")
+                    print(f"   Feeds processed: {total_stats['feeds_processed']}")
+                    print(f"   Articles fetched: {total_stats['total_added']}")
+
+                    # Now filter semantically
+                    from .rss_semantic_filter import filter_rss_by_topic
+
+                    threshold = final_threshold if 'final_threshold' in locals() else 0.5
+                    print(f"\n📋 Applying semantic filter (threshold: {threshold:.2f})...")
+
+                    rss_articles = filter_rss_by_topic(database, topics, threshold)
+                    print(f"✅ Semantic filtering complete: {len(rss_articles)} topic-relevant articles")
+
+                elif getattr(args, 'topics', None) and not getattr(args, 'websearch', False):
+                    # Original RSS-only collection (no websearch)
+                    # Use topics directly without requiring config validation
+                    # Any topic keyword can be used for filtering
+                    valid_topics = topics
+
+                    collector = SimpleCollector(database)
+                    total_stats = {"feeds_processed": 0, "total_fetched": 0, "total_added": 0, "ai_relevant_added": 0}
+
+                    # Collect from all regions
+                    for region_code, region_config in config.regions.items():
+                        if region_config.enabled:
+                            region_stats = collector.collect_region(config, region_code)
+                            total_stats["feeds_processed"] += region_stats["feeds_processed"]
+                            total_stats["total_fetched"] += region_stats["total_fetched"]
+                            total_stats["total_added"] += region_stats["total_added"]
+                            total_stats["ai_relevant_added"] += region_stats["ai_relevant_added"]
+
+                    print(f"\n📊 Collection Summary:")
+                    print(f"   Feeds processed: {total_stats['feeds_processed']}")
+                    print(f"   Total articles: {total_stats['total_added']}")
+                    print(f"   AI-relevant: {total_stats['ai_relevant_added']}")
+
+                    # Show topic-specific stats
+                    print(f"\n📈 Topic Relevance:")
+                    for topic in valid_topics:
+                        # Search articles with this topic in keywords
+                        articles = database.get_articles_by_keywords([topic], limit=100)
+                        if articles:
+                            ai_count = sum(1 for a in articles if a.ai_relevant)
+                            print(f"   • {topic}: {len(articles)} articles ({ai_count} AI-relevant)")
+                        else:
+                            print(f"   • {topic}: No articles found")
 
             # AI-only collection (filter all RSS feeds to AI-relevant only)
             if getattr(args, 'ai_only', False):

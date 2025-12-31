@@ -80,9 +80,8 @@ try:
     NLTK_UTILS_AVAILABLE = True
 except ImportError:
     NLTK_UTILS_AVAILABLE = False
-    logger.warning("NLTK utils not available. NLTK data may be downloaded repeatedly.")
-    
-    # Fallback function
+    # NLTK not required - using FastEmbed for semantic processing
+    # Fallback function for legacy code paths
     def ensure_nltk_data_lazy(package_id: str, resource_path: str) -> bool:
         """Fallback NLTK data checker."""
         try:
