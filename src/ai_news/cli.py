@@ -582,6 +582,7 @@ def main():
     collect_parser.add_argument('--websearch', action='store_true', help='Use web search for topic-focused collection (fast, AI-relevant)')
     collect_parser.add_argument('--rss', action='store_true', help='Also collect from RSS feeds (more time-relevant, runs after websearch)')
     collect_parser.add_argument('--force', action='store_true', help='Auto-kill existing collection processes without prompting')
+    collect_parser.add_argument('--min-confidence', type=float, default=0.5, help='Minimum confidence for topic intersection (default: 0.5)')
     
     # List command
     list_parser = subparsers.add_parser('list', help='List recent articles')
@@ -938,10 +939,11 @@ def main():
                     query = f"AI {plan['query']}" if 'query' in plan else 'AI ' + ' + '.join(plan['topics'])
                     print(f"   {i}/{len(search_plans)}: {query}")
 
+                    min_confidence = getattr(args, 'min_confidence', 0.5)
                     result = _execute_search_plan(
                         plan, i, len(search_plans),
                         search_collector, optimizer, database,
-                        limit=50, min_confidence=0.25
+                        limit=50, min_confidence=min_confidence
                     )
                     total_articles += result['count']
 
@@ -2271,8 +2273,9 @@ def handle_search_feeds_command(args):
     from .search_collector import SearchEngineCollector
     from .database import Database
     
-    # Create a temporary database instance for search
-    db_path = 'data/production/ai_news.db'
+    # Use config database path for consistency
+    config = Config.load(Path('config.json'))
+    db_path = args.db or config.database_path
     temp_db = Database(db_path)
     searcher = SearchEngineCollector(temp_db)
     
@@ -2316,8 +2319,7 @@ def handle_search_feeds_command(args):
     from .database import Database
     
     try:
-        db = Database('data/production/ai_news.db')
-        discovery = FeedDiscoveryEngine(db)
+        discovery = FeedDiscoveryEngine(temp_db)
         
         all_feeds = set()
         # Re-run search to get URLs for discovery
