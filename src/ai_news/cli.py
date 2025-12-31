@@ -916,11 +916,11 @@ def main():
                     print("   Example: ai-news collect --websearch --topics blockchain,AI")
                     return
 
-                print("\n" + "="*60)
-                print("🔍 TOPIC-FOCUSED COLLECTION (WEBSEARCH MODE)")
-                print("="*60)
-                print("✓ Collecting AI-relevant articles for specific topics")
-                print("✓ Higher relevance, less noise\n")
+                print("\n" + "="*60, flush=True)
+                print("🔍 TOPIC-FOCUSED COLLECTION (WEBSEARCH MODE)", flush=True)
+                print("="*60, flush=True)
+                print("✓ Collecting AI-relevant articles for specific topics", flush=True)
+                print("✓ Higher relevance, less noise\n", flush=True)
 
                 # Import websearch components
                 from .search_collector import SearchEngineCollector
@@ -928,7 +928,7 @@ def main():
                 from .intersection_planner import plan_topic_searches
 
                 topics = [t.strip() for t in args.topics.split(',')]
-                print(f"📋 Topics: {', '.join(topics)}")
+                print(f"📋 Topics: {', '.join(topics)}", flush=True)
 
                 search_collector = SearchEngineCollector(database)
                 optimizer = create_intersection_optimizer()
@@ -936,13 +936,13 @@ def main():
                 # Generate search plans (individual topics + intersections)
                 search_plans = plan_topic_searches(topics, max_intersection_size=2)
 
-                print(f"📊 Executing {len(search_plans)} searches...")
+                print(f"📊 Executing {len(search_plans)} searches...", flush=True)
                 total_articles = 0
                 all_results = []  # Store results for saving
 
                 for i, plan in enumerate(search_plans, 1):
                     query = f"AI {plan['query']}" if 'query' in plan else 'AI ' + ' + '.join(plan['topics'])
-                    print(f"   {i}/{len(search_plans)}: {query}")
+                    print(f"   {i}/{len(search_plans)}: {query}", flush=True)
 
                     # Two-pass collection: start low, adapt based on quality
                     initial_threshold = 0.3
@@ -987,8 +987,8 @@ def main():
                     total_articles += result['count']
                     all_results.append(result)  # Store result for saving
 
-                print(f"\n🔍 Websearch: {total_articles} AI-relevant articles collected")
-                print("✓ All articles are topic-focused and AI-relevant")
+                print(f"\n🔍 Websearch: {total_articles} AI-relevant articles collected", flush=True)
+                print("✓ All articles are topic-focused and AI-relevant", flush=True)
                 
                 # Save websearch articles to database
                 saved_count = 0
@@ -997,7 +997,7 @@ def main():
                         if database.save_article(article, auto_tag=False):
                             saved_count += 1
                 
-                print(f"✓ Saved {saved_count}/{total_articles} articles to database")
+                print(f"✓ Saved {saved_count}/{total_articles} articles to database", flush=True)
                 
                 # Apply semantic filtering to improve quality
                 from .rss_semantic_filter import filter_rss_by_topic
@@ -1042,14 +1042,14 @@ def main():
             if getattr(args, 'topics', None) and (not getattr(args, 'websearch', False) or getattr(args, 'rss', False)):
                 topics = [t.strip() for t in args.topics.split(',')]
 
-                print("\n" + "="*60)
-                print("📋 TOPIC-FOCUSED COLLECTION (RSS MODE)")
-                print("="*60)
-                print(f"📋 Topics: {', '.join(topics)}")
+                print("\n" + "="*60, flush=True)
+                print("📋 TOPIC-FOCUSED COLLECTION (RSS MODE)", flush=True)
+                print("="*60, flush=True)
+                print(f"📋 Topics: {', '.join(topics)}", flush=True)
 
                 # Topic-focused RSS collection with semantic filtering
                 if getattr(args, 'websearch', False) and getattr(args, 'rss', False):
-                    print(f"\n📋 RSS collection for topics: {', '.join(topics)}")
+                    print(f"\n📋 RSS collection for topics: {', '.join(topics)}", flush=True)
 
                     # Collect RSS feeds first
                     collector = SimpleCollector(database)
@@ -1063,23 +1063,22 @@ def main():
                             total_stats["total_added"] += region_stats["total_added"]
                             total_stats["ai_relevant_added"] += region_stats["ai_relevant_added"]
 
-                    print(f"\n📊 Raw RSS Collection:")
-                    print(f"   Feeds processed: {total_stats['feeds_processed']}")
-                    print(f"   Articles fetched: {total_stats['total_added']}")
+                    print(f"\n📊 Raw RSS Collection:", flush=True)
+                    print(f"   Feeds processed: {total_stats['feeds_processed']}", flush=True)
+                    print(f"   Articles fetched: {total_stats['total_added']}", flush=True)
 
                     # Now filter semantically
                     from .rss_semantic_filter import filter_rss_by_topic
 
                     threshold = final_threshold if 'final_threshold' in locals() else 0.5
-                    print(f"\n📋 Applying semantic filter (threshold: {threshold:.2f})...")
+                    print(f"\n📋 Applying semantic filter (threshold: {threshold:.2f})...", flush=True)
 
                     rss_articles = filter_rss_by_topic(database, topics, threshold)
-                    print(f"✅ Semantic filtering complete: {len(rss_articles)} topic-relevant articles")
+                    print(f"✅ Semantic filtering complete: {len(rss_articles)} topic-relevant articles", flush=True)
 
                 elif getattr(args, 'topics', None) and not getattr(args, 'websearch', False):
-                    # Original RSS-only collection (no websearch)
-                    # Use topics directly without requiring config validation
-                    # Any topic keyword can be used for filtering
+                    # RSS-only collection (no websearch) with semantic filtering
+                    # Use FastEmbed to filter articles by topic relevance
                     valid_topics = topics
 
                     collector = SimpleCollector(database)
@@ -1094,21 +1093,18 @@ def main():
                             total_stats["total_added"] += region_stats["total_added"]
                             total_stats["ai_relevant_added"] += region_stats["ai_relevant_added"]
 
-                    print(f"\n📊 Collection Summary:")
-                    print(f"   Feeds processed: {total_stats['feeds_processed']}")
-                    print(f"   Total articles: {total_stats['total_added']}")
-                    print(f"   AI-relevant: {total_stats['ai_relevant_added']}")
+                    print(f"\n📊 Raw RSS Collection:", flush=True)
+                    print(f"   Feeds processed: {total_stats['feeds_processed']}", flush=True)
+                    print(f"   Articles fetched: {total_stats['total_added']}", flush=True)
 
-                    # Show topic-specific stats
-                    print(f"\n📈 Topic Relevance:")
-                    for topic in valid_topics:
-                        # Search articles with this topic in keywords
-                        articles = database.get_articles_by_keywords([topic], limit=100)
-                        if articles:
-                            ai_count = sum(1 for a in articles if a.ai_relevant)
-                            print(f"   • {topic}: {len(articles)} articles ({ai_count} AI-relevant)")
-                        else:
-                            print(f"   • {topic}: No articles found")
+                    # Apply semantic filtering using FastEmbed
+                    from .rss_semantic_filter import filter_rss_by_topic
+
+                    threshold = 0.5
+                    print(f"\n📋 Applying semantic filter (threshold: {threshold:.2f})...", flush=True)
+
+                    rss_articles = filter_rss_by_topic(database, topics, threshold)
+                    print(f"✅ Semantic filtering complete: {len(rss_articles)} topic-relevant articles", flush=True)
 
             # AI-only collection (filter all RSS feeds to AI-relevant only)
             if getattr(args, 'ai_only', False):
@@ -1747,8 +1743,8 @@ def _execute_search_plan(
     tags = plan['tags']
     tags_display = ', '.join(tags)
     
-    print(f"[{index}/{total}] 🔍 Searching: [{tags_display}]")
-    print(f"   Query: {plan['query']}")
+    print(f"[{index}/{total}] 🔍 Searching: [{tags_display}]", flush=True)
+    print(f"   Query: {plan['query']}", flush=True)
     
     # Perform search
     try:
@@ -1793,8 +1789,8 @@ def _execute_search_plan(
         'tags': tags
     }
     
-    print(f"   ✅ Found {len(articles)} articles for [{tags_display}]")
-    print()
+    print(f"   ✅ Found {len(articles)} articles for [{tags_display}]", flush=True)
+    print(flush=True)
     
     return result
 

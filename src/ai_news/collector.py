@@ -430,7 +430,7 @@ class SimpleCollector:
                 print(f"Skipping disabled feed: {feed_config.name}")
                 continue
 
-            print(f"Processing feed: {feed_config.name}")
+            print(f"Processing feed: {feed_config.name}", flush=True)
             articles = self.fetch_feed(feed_config, max_articles=max_articles_per_feed)
 
             # Apply semantic filtering if topics provided
@@ -446,7 +446,7 @@ class SimpleCollector:
                 stats["semantic_filtered"] += filtered_count
 
                 if filtered_count > 0:
-                    print(f"  Semantic filter: {filtered_count}/{len(articles) + filtered_count} articles filtered")
+                    print(f"  Semantic filter: {filtered_count}/{len(articles) + filtered_count} articles filtered", flush=True)
 
             added_count = 0
             ai_count = 0
@@ -462,7 +462,7 @@ class SimpleCollector:
             stats["ai_relevant_added"] += ai_count
             stats["feeds_processed"] += 1
 
-            print(f"  Added: {added_count}/{len(articles)} articles, AI-relevant: {ai_count}")
+            print(f"  Added: {added_count}/{len(articles)} articles, AI-relevant: {ai_count}", flush=True)
 
             # Be respectful to servers (removed sleep - too slow for 15 feeds)
 
@@ -658,9 +658,9 @@ class SimpleCollector:
 
             # Log semantic filtering stats if applicable
             if topics is not None and stats["semantic_filtered"] > 0:
-                print(f"  Semantic filter: {stats['semantic_filtered']}/{stats['fetched']} articles filtered")
+                print(f"  Semantic filter: {stats['semantic_filtered']}/{stats['fetched']} articles filtered", flush=True)
                 topics_str = ', '.join(topics)
-                print(f"  Topics: {topics_str}")
+                print(f"  Topics: {topics_str}", flush=True)
 
             return stats
 
