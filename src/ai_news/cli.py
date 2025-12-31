@@ -428,7 +428,15 @@ def print_schedule_status(config):
 def handle_feeds_command(args, config):
     """Handle feed management commands."""
     
-    if args.feeds_command == 'add':
+    if args.feeds_command == 'check':
+        handle_feeds_check(args, config)
+    elif args.feeds_command == 'disable':
+        handle_feeds_disable(args, config)
+    elif args.feeds_command == 'replace':
+        handle_feeds_replace(args, config)
+    elif args.feeds_command == 'auto-replace':
+        handle_feeds_auto_replace(args, config)
+    elif args.feeds_command == 'add':
         # Create new feed
         ai_keywords = []
         if getattr(args, 'ai_keywords', None):
@@ -518,6 +526,269 @@ def handle_feeds_command(args, config):
     
     else:
         print("❌ Unknown feeds command. Use --help to see available commands.")
+
+
+def handle_feeds_check(args, config):
+    """Check feed health status."""
+    from .database import Database
+    
+    database = Database(config.database_path)
+    feeds = database.get_feed_health(region=getattr(args, 'region', None))
+    
+    if not feeds:
+        print("✅ No feed health issues detected")
+        return
+    
+    print("\n" + "="*60)
+    print("FEED HEALTH REPORT")
+    print("="*60)
+    
+    # Group by status
+    failing = [f for f in feeds if f['failure_count'] >= 1]
+    disabled = [f for f in feeds if f['is_disabled']]
+    
+    print(f"\nTotal feeds tracked: {len(feeds)}")
+    print(f"Feeds with failures: {len(failing)}")
+    print(f"Disabled feeds: {len(disabled)}")
+    
+    if failing:
+        print("\n⚠️  FEEDS WITH FAILURES:")
+        print("-" * 60)
+        for feed in failing:
+            status = "DISABLED" if feed['is_disabled'] else "ACTIVE"
+            marker = "❌" if feed['is_disabled'] else "⚠️"
+            print(f"{marker} [{status}] {feed.get('feed_name', 'Unknown')}")
+            print(f"   URL: {feed['feed_url']}")
+            print(f"   Region: {feed.get('region', 'global').upper()}")
+            print(f"   Failures: {feed['failure_count']}")
+            print(f"   Last error: {feed.get('last_error', 'Unknown')}")
+            if feed.get('last_failure_at'):
+                print(f"   Last failure: {feed['last_failure_at']}")
+            print()
+    
+    if disabled:
+        print("\n🚫 DISABLED FEEDS (should be replaced):")
+        print("-" * 60)
+        for feed in disabled:
+            print(f"• {feed.get('feed_name', 'Unknown')}")
+            print(f"  URL: {feed['feed_url']}")
+            print(f"  Region: {feed.get('region', 'global').upper()}")
+            print(f"  Failures: {feed['failure_count']}")
+            print()
+    
+    print("="*60)
+
+
+def handle_feeds_disable(args, config):
+    """Manually disable a feed."""
+    from .database import Database
+    
+    database = Database(config.database_path)
+    
+    if database.disable_feed(args.url):
+        print(f"✅ Disabled feed: {args.url}")
+        print(f"   Reason: {args.reason}")
+        print("\n💡 To find a replacement, use:")
+        print(f"   uv run ai-news feeds replace --broken-url '{args.url}' --region <region>")
+    else:
+        print("❌ Failed to disable feed")
+
+
+def handle_feeds_replace(args, config):
+    """Replace a broken feed with a discovered one."""
+    from .database import Database
+    from .feed_discovery import FeedDiscoveryEngine
+    
+    database = Database(config.database_path)
+    
+    print("\n" + "="*60)
+    print("FEED REPLACEMENT WIZARD")
+    print("="*60)
+    print(f"Broken URL: {args.broken_url}")
+    print(f"Region: {args.region.upper()}")
+    
+    # Auto-detect topic from URL if not provided
+    if not args.topic:
+        import re
+        from urllib.parse import urlparse
+        parsed = urlparse(args.broken_url)
+        domain = parsed.netloc.replace('www.', '')
+        
+        # Extract potential topic from domain
+        topic_parts = domain.split('.')
+        if len(topic_parts) >= 2:
+            args.topic = topic_parts[0]
+            print(f"Auto-detected topic: {args.topic}")
+        else:
+            args.topic = "technology"
+            print(f"Using default topic: technology")
+    else:
+        print(f"Topic: {args.topic}")
+    
+    print("\n🔍 Searching for replacement feeds...")
+    
+    # Discover replacement feeds
+    discovery = FeedDiscoveryEngine(database)
+    try:
+        replacements = discovery.discover_feeds_for_topic(args.topic, max_feeds=5)
+    except Exception as e:
+        print(f"❌ Feed discovery failed: {e}")
+        print("\n💡 You can manually add a replacement feed:")
+        print(f"   uv run ai-news feeds add --name '<Name>' --url '<URL>' --region {args.region}")
+        return
+    
+    if not replacements:
+        print("❌ No replacement feeds found")
+        return
+    
+    print(f"\n✅ Found {len(replacements)} candidate replacements:")
+    print("-" * 60)
+    
+    for i, feed in enumerate(replacements, 1):
+        print(f"\n{i}. {feed.get('title', 'Unknown')}")
+        print(f"   URL: {feed.get('url', 'Unknown')}")
+        print(f"   Description: {feed.get('description', 'No description')[:100]}")
+        print(f"   Relevance: {feed.get('relevance_score', 0):.2f}")
+        print(f"   Articles: {feed.get('article_count', 0)}")
+    
+    # Auto-add or prompt
+    if args.auto_approve:
+        best = replacements[0]
+        print(f"\n✅ Auto-adding best replacement: {best.get('title', 'Unknown')}")
+        
+        from .config import FeedConfig
+        new_feed = FeedConfig(
+            name=best.get('title', 'Discovered Feed')[:50],
+            url=best.get('url', ''),
+            category='discovered',
+            enabled=True
+        )
+        
+        # Add to region
+        if args.region not in config.regions:
+            from .config import RegionConfig
+            config.regions[args.region] = RegionConfig(name=args.region.title())
+        
+        config.regions[args.region].feeds.append(new_feed)
+        config.save(config.config_path)
+        
+        print(f"✅ Added to {args.region.upper()} region")
+        
+        # Remove old feed
+        print(f"\n💡 Don't forget to remove the broken feed:")
+        print(f"   uv run ai-news feeds remove --name '<Old Feed Name>' --region {args.region}")
+    else:
+        print(f"\n💡 To add a replacement, use:")
+        best = replacements[0]
+        print(f"   uv run ai-news feeds add --name '{best.get('title', 'Replacement Feed')[:50]}' --url '{best.get('url', '')}' --region {args.region}")
+    
+    print("="*60)
+
+
+def handle_feeds_auto_replace(args, config):
+    """Automatically replace all disabled feeds."""
+    from .database import Database
+    from .feed_discovery import FeedDiscoveryEngine
+    
+    database = Database(config.database_path)
+    
+    print("\n" + "="*60)
+    print("AUTOMATIC FEED REPLACEMENT")
+    print("="*60)
+    
+    # Get disabled feeds
+    feeds = database.get_feed_health(region=getattr(args, 'region', None))
+    disabled_feeds = [f for f in feeds if f['is_disabled']]
+    
+    if not disabled_feeds:
+        print("✅ No disabled feeds found")
+        return
+    
+    print(f"\nFound {len(disabled_feeds)} disabled feeds")
+    
+    if args.dry_run:
+        print("\n🔍 DRY RUN MODE - No changes will be made")
+        print("-" * 60)
+    
+    discovery = FeedDiscoveryEngine(database)
+    replaced_count = 0
+    failed_count = 0
+    
+    for i, feed in enumerate(disabled_feeds, 1):
+        print(f"\n[{i}/{len(disabled_feeds)}] Processing: {feed.get('feed_name', 'Unknown')}")
+        print(f"   URL: {feed['feed_url']}")
+        print(f"   Region: {feed.get('region', 'global').upper()}")
+        print(f"   Failures: {feed['failure_count']}")
+        
+        # Extract topic from feed name or URL
+        import re
+        from urllib.parse import urlparse
+        
+        topic = feed.get('feed_name', '').split()[0] if feed.get('feed_name') else 'technology'
+        if not topic or len(topic) < 3:
+            parsed = urlparse(feed['feed_url'])
+            domain = parsed.netloc.replace('www.', '')
+            topic = domain.split('.')[0]
+        
+        print(f"   Topic: {topic}")
+        
+        try:
+            # Discover replacements
+            replacements = discovery.discover_feeds_for_topic(topic, max_feeds=3)
+            
+            if replacements:
+                best = replacements[0]
+                print(f"   ✅ Found replacement: {best.get('title', 'Unknown')}")
+                print(f"      URL: {best.get('url', 'Unknown')[:80]}")
+                print(f"      Relevance: {best.get('relevance_score', 0):.2f}")
+                
+                if not args.dry_run:
+                    # Add to config
+                    from .config import FeedConfig
+                    region = feed.get('region', 'global')
+                    
+                    new_feed = FeedConfig(
+                        name=best.get('title', 'Discovered Feed')[:50],
+                        url=best.get('url', ''),
+                        category='discovered',
+                        enabled=True
+                    )
+                    
+                    if region not in config.regions:
+                        from .config import RegionConfig
+                        config.regions[region] = RegionConfig(name=region.title())
+                    
+                    config.regions[region].feeds.append(new_feed)
+                    
+                    # Re-enable the feed in health tracking
+                    database.enable_feed(best.get('url', ''))
+                    
+                    replaced_count += 1
+            else:
+                print(f"   ❌ No replacements found")
+                failed_count += 1
+                
+        except Exception as e:
+            print(f"   ❌ Replacement failed: {e}")
+            failed_count += 1
+    
+    # Save config if changes were made
+    if not args.dry_run and replaced_count > 0:
+        config.save(config.config_path)
+        print(f"\n💾 Saved {replaced_count} new feeds to config")
+    
+    # Summary
+    print("\n" + "="*60)
+    print("REPLACEMENT SUMMARY")
+    print("="*60)
+    print(f"Total disabled feeds: {len(disabled_feeds)}")
+    print(f"Replacements found: {replaced_count}")
+    print(f"Failed to replace: {failed_count}")
+    
+    if args.dry_run:
+        print("\n💡 Run without --dry-run to apply changes")
+    
+    print("="*60)
 
 
 def check_and_kill_old_processes(force=False):
@@ -739,6 +1010,27 @@ def main():
     feeds_remove_parser = feeds_subparsers.add_parser('remove', help='Remove a feed')
     feeds_remove_parser.add_argument('name', help='Feed name to remove')
     feeds_remove_parser.add_argument('--region', choices=['us', 'uk', 'eu', 'apac', 'global'], help='Region to remove from')
+    
+    # Feeds check command
+    feeds_check_parser = feeds_subparsers.add_parser('check', help='Check feed health')
+    feeds_check_parser.add_argument('--region', choices=['us', 'uk', 'eu', 'apac', 'global'], help='Filter by region')
+    
+    # Feeds disable command
+    feeds_disable_parser = feeds_subparsers.add_parser('disable', help='Manually disable a failing feed')
+    feeds_disable_parser.add_argument('--url', required=True, help='Feed URL to disable')
+    feeds_disable_parser.add_argument('--reason', required=True, help='Reason for disabling')
+    
+    # Feeds replace command
+    feeds_replace_parser = feeds_subparsers.add_parser('replace', help='Replace a broken feed with a discovered one')
+    feeds_replace_parser.add_argument('--broken-url', required=True, help='URL of broken feed')
+    feeds_replace_parser.add_argument('--region', choices=['us', 'uk', 'eu', 'apac', 'global'], default='global', help='Region for replacement')
+    feeds_replace_parser.add_argument('--topic', help='Topic for discovery (default: auto-detect from feed name)')
+    feeds_replace_parser.add_argument('--auto-approve', action='store_true', help='Automatically add best replacement')
+    
+    # Feeds auto-replace command
+    feeds_auto_replace_parser = feeds_subparsers.add_parser('auto-replace', help='Automatically replace all disabled feeds')
+    feeds_auto_replace_parser.add_argument('--region', choices=['us', 'uk', 'eu', 'apac', 'global'], help='Filter by region')
+    feeds_auto_replace_parser.add_argument('--dry-run', action='store_true', help='Preview without making changes')
     
     # Feed discovery commands for automatic RSS feed finding
     add_topic_parser = subparsers.add_parser('add-topic', help='Automatically discover and add RSS feeds for a topic')

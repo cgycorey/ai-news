@@ -302,6 +302,22 @@ class Database:
             """)
 
             conn.execute("""
+                CREATE TABLE IF NOT EXISTS feed_health (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    feed_url TEXT UNIQUE NOT NULL,
+                    feed_name TEXT,
+                    region TEXT DEFAULT 'global',
+                    failure_count INTEGER DEFAULT 0,
+                    last_error TEXT,
+                    last_failure_at TIMESTAMP,
+                    last_success_at TIMESTAMP,
+                    is_disabled BOOLEAN DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_url ON articles(url)
             """)
 
@@ -1555,3 +1571,195 @@ class Database:
                 'top_companies': [],
                 'top_products': []
             }
+
+    def record_feed_failure(self, feed_url: str, feed_name: str, region: str, error: str) -> bool:
+        """Record a feed failure. Returns True if feed should be disabled (3+ failures).
+        
+        Args:
+            feed_url: URL of the feed that failed
+            feed_name: Name of the feed
+            region: Region code (us, eu, apac, etc.)
+            error: Error message
+            
+        Returns:
+            True if feed should be disabled (3+ failures)
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                # Check if feed exists
+                existing = conn.execute(
+                    "SELECT failure_count, is_disabled FROM feed_health WHERE feed_url = ?",
+                    (feed_url,)
+                ).fetchone()
+                
+                if existing:
+                    failure_count = existing[0] + 1
+                    is_disabled = existing[1]
+                    
+                    # Update existing record
+                    conn.execute("""
+                        UPDATE feed_health
+                        SET failure_count = ?,
+                            last_error = ?,
+                            last_failure_at = CURRENT_TIMESTAMP,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE feed_url = ?
+                    """, (failure_count, error, feed_url))
+                else:
+                    # Insert new record
+                    failure_count = 1
+                    conn.execute("""
+                        INSERT INTO feed_health (feed_url, feed_name, region, failure_count, last_error, last_failure_at)
+                        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    """, (feed_url, feed_name, region, failure_count, error))
+                
+                conn.commit()
+                
+                # Auto-disable after 3+ failures
+                if failure_count >= 3 and not is_disabled:
+                    self.disable_feed(feed_url)
+                    logger.warning(f"Feed '{feed_name}' auto-disabled after {failure_count} failures")
+                    return True
+                
+                return failure_count >= 3
+                
+        except sqlite3.Error as e:
+            logger.error(f"Error recording feed failure: {e}")
+            return False
+
+    def record_feed_success(self, feed_url: str) -> bool:
+        """Record a successful feed fetch. Returns True if feed was re-enabled.
+        
+        Args:
+            feed_url: URL of the feed
+            
+        Returns:
+            True if feed was re-enabled
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                # Check if feed exists
+                existing = conn.execute(
+                    "SELECT is_disabled FROM feed_health WHERE feed_url = ?",
+                    (feed_url,)
+                ).fetchone()
+                
+                if existing:
+                    was_disabled = existing[0]
+                    
+                    # Reset failure count and update success timestamp
+                    conn.execute("""
+                        UPDATE feed_health
+                        SET failure_count = 0,
+                            last_success_at = CURRENT_TIMESTAMP,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE feed_url = ?
+                    """, (feed_url,))
+                    
+                    # Re-enable if it was disabled
+                    if was_disabled:
+                        conn.execute("UPDATE feed_health SET is_disabled = 0 WHERE feed_url = ?", (feed_url,))
+                        conn.commit()
+                        logger.info(f"Feed re-enabled after successful fetch: {feed_url}")
+                        return True
+                else:
+                    # Insert new record with success
+                    conn.execute("""
+                        INSERT INTO feed_health (feed_url, feed_name, region, failure_count, last_success_at)
+                        VALUES (?, '', '', 0, CURRENT_TIMESTAMP)
+                    """, (feed_url,))
+                
+                conn.commit()
+                return False
+                
+        except sqlite3.Error as e:
+            logger.error(f"Error recording feed success: {e}")
+            return False
+
+    def get_feed_health(self, region: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Get health status of all feeds.
+        
+        Args:
+            region: Optional region filter
+            
+        Returns:
+            List of feed health dictionaries
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                
+                if region:
+                    rows = conn.execute("""
+                        SELECT * FROM feed_health WHERE region = ? ORDER BY failure_count DESC
+                    """, (region.lower(),)).fetchall()
+                else:
+                    rows = conn.execute("""
+                        SELECT * FROM feed_health ORDER BY failure_count DESC
+                    """).fetchall()
+                
+                return [dict(row) for row in rows]
+                
+        except sqlite3.Error as e:
+            logger.error(f"Error getting feed health: {e}")
+            return []
+
+    def disable_feed(self, feed_url: str) -> bool:
+        """Disable a failing feed.
+        
+        Args:
+            feed_url: URL of the feed to disable
+            
+        Returns:
+            True if successful
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                # Check if feed exists
+                existing = conn.execute(
+                    "SELECT feed_url FROM feed_health WHERE feed_url = ?", (feed_url,)
+                ).fetchone()
+                
+                if not existing:
+                    # Insert with disabled status if doesn't exist
+                    conn.execute("""
+                        INSERT INTO feed_health (feed_url, feed_name, region, failure_count, is_disabled, last_error, last_failure_at)
+                        VALUES (?, '', '', 3, 1, 'Manually disabled', CURRENT_TIMESTAMP)
+                    """, (feed_url,))
+                else:
+                    # Update to disabled
+                    conn.execute("""
+                        UPDATE feed_health
+                        SET is_disabled = 1, failure_count = 3, updated_at = CURRENT_TIMESTAMP
+                        WHERE feed_url = ?
+                    """, (feed_url,))
+                
+                conn.commit()
+                return True
+                
+        except sqlite3.Error as e:
+            logger.error(f"Error disabling feed: {e}")
+            return False
+
+    def enable_feed(self, feed_url: str) -> bool:
+        """Re-enable a feed (after recovery).
+        
+        Args:
+            feed_url: URL of the feed to re-enable
+            
+        Returns:
+            True if successful
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute("""
+                    UPDATE feed_health
+                    SET is_disabled = 0, failure_count = 0, updated_at = CURRENT_TIMESTAMP
+                    WHERE feed_url = ?
+                """, (feed_url,))
+                conn.commit()
+                return True
+                
+        except sqlite3.Error as e:
+            logger.error(f"Error enabling feed: {e}")
+            return False

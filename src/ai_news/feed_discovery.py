@@ -1003,6 +1003,26 @@ class FeedDiscoveryEngine:
         
         return queries
 
+    def _generate_fallback_queries(self, topic: str) -> List[str]:
+        """Generate fallback search queries for broader feed discovery.
+        
+        Args:
+            topic: Topic to search for
+            
+        Returns:
+            List of fallback query strings
+        """
+        topic_lower = topic.lower().strip()
+        
+        fallback_queries = [
+            f'{topic_lower} news RSS',
+            f'{topic_lower} technology feed',
+            f'{topic_lower} blog RSS feed',
+            f'{topic_lower} publications RSS'
+        ]
+        
+        return fallback_queries
+    
     def _generate_search_queries(self, topic: str) -> List[str]:
         """Generate enhanced RSS-specific search queries.
         

@@ -144,7 +144,7 @@ class SimpleCollector:
 
         return True
 
-    def fetch_rss_feed(self, url: str):
+    def fetch_rss_feed(self, url: str, feed_name: str = "Unknown", region: str = "global"):
 
         """Fetch and parse RSS feed securely."""
         try:
@@ -152,15 +152,19 @@ class SimpleCollector:
             is_valid, error = validate_url(url)
             if not is_valid:
                 print(f"URL validation failed for {url}: {error}")
+                self.database.record_feed_failure(url, feed_name, region, f"URL validation failed: {error}")
                 return None
 
             # Use safe URL opener (reduced timeout for faster failure on slow feeds)
             response = safe_urlopen(url, headers=self.headers, timeout=10)
             if response is None:
+                self.database.record_feed_failure(url, feed_name, region, "Failed to open URL")
                 return None
 
             # Check HTTP status
             if not self._check_http_status(response, url):
+                status = getattr(response, 'status', getattr(response, 'getcode', lambda: 'Unknown')())
+                self.database.record_feed_failure(url, feed_name, region, f"HTTP {status}")
                 return None
 
             # Read content (response is guaranteed not-None here)
@@ -179,20 +183,28 @@ class SimpleCollector:
             content_lower = content.lower().strip()
             if content_lower.startswith('<!doctype html>') or (content_lower.startswith('<html>') and not content_lower.startswith('<?xml')):
                 print(f"⚠ Received HTML instead of RSS from {url} (likely blocked or 403)")
+                self.database.record_feed_failure(url, feed_name, region, "Received HTML instead of RSS")
                 return None
 
             # Parse XML securely
             root = parse_xml_safe(content, source_url=url)
+            
+            # Record success
+            self.database.record_feed_success(url)
+            
             return root
 
         except Exception as e:
             error_str = str(e)
             if '403' in error_str or 'Forbidden' in error_str:
                 print(f"⚠ Access forbidden (403) from {url}")
+                self.database.record_feed_failure(url, feed_name, region, "403 Forbidden")
             elif '404' in error_str or 'Not Found' in error_str:
                 print(f"⚠ Feed not found (404) from {url}")
+                self.database.record_feed_failure(url, feed_name, region, "404 Not Found")
             else:
                 print(f"Error fetching RSS feed from {url}: {e}")
+                self.database.record_feed_failure(url, feed_name, region, error_str)
             return None
 
     def clean_html(self, html_content: str) -> str:
@@ -298,13 +310,13 @@ class SimpleCollector:
         
         return None
     
-    def fetch_feed(self, feed_config: FeedConfig, max_articles: int = 50) -> List[Article]:
+    def fetch_feed(self, feed_config: FeedConfig, max_articles: int = 50, region: str = "global") -> List[Article]:
         """Fetch articles from a single RSS feed."""
         articles = []
         
         print(f"  Fetching from {feed_config.name}...")
         
-        root = self.fetch_rss_feed(feed_config.url)
+        root = self.fetch_rss_feed(feed_config.url, feed_config.name, region)
         if root is None:
             return articles
         
@@ -630,7 +642,7 @@ class SimpleCollector:
             Statistics dictionary
         """
         try:
-            articles = self.fetch_feed(feed)
+            articles = self.fetch_feed(feed, region=region)
 
             stats = {
                 "fetched": len(articles),
