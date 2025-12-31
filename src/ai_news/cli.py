@@ -1394,7 +1394,9 @@ def main():
     except KeyboardInterrupt:
         print("\nOperation cancelled by user.")
     except Exception as e:
-        print(f"Error executing command: {e}")
+        print(f"Error executing command: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
 
 
