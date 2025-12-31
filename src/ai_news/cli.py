@@ -863,8 +863,7 @@ def main():
     # If no command provided, default to generating today's news
     if not args.command:
         print("🤖 No command specified - generating today's AI news digest...")
-        print("Use --help to see all available commands.")
-        print("💡 First-time setup: uv run ai-news setup-nltk\n")
+        print("Use --help to see all available commands.\n")
         
         # Create a simple object with digest defaults
         class DigestArgs:
